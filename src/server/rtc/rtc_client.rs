@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use webrtc::api::APIBuilder;
+use webrtc::api::interceptor_registry::register_default_interceptors;
+use webrtc::api::media_engine::{self, MediaEngine};
+use webrtc::api::{APIBuilder, API};
+use webrtc::interceptor::registry::Registry;
 use webrtc::peer_connection::configuration::RTCConfiguration;
 use webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState;
 use webrtc::peer_connection::RTCPeerConnection;
@@ -8,16 +11,23 @@ use webrtc::track::track_remote::TrackRemote;
 use webrtc::Error;
 
 pub struct RTCClient {
-    peer_connection: RTCPeerConnection,
+    peer_connection: Arc<RTCPeerConnection>,
+    api: API,
 }
 
 impl RTCClient {
     pub async fn new() -> Result<Self, Error> {
-        let api = APIBuilder::new().build();
-        let config = RTCConfiguration::default();
-        let peer_connection = api.new_peer_connection(config).await?;
+
+        let mut registry = Registry::new();
         
-        Ok(Self { peer_connection })
+        
+        let mut media_engine = MediaEngine::default();
+        registry = register_default_interceptors(registry, &mut media_engine)?;
+        let api = APIBuilder::new().with_media_engine(media_engine).with_interceptor_registry(registry).build();
+        let config = RTCConfiguration::default();
+        let peer_connection = Arc::new(api.new_peer_connection(config).await?);
+
+        Ok(Self { peer_connection, api })
     }
 
     // 处理远程音频轨道
