@@ -1,19 +1,24 @@
 use tokio_tungstenite::connect_async;
 use tokio::net::TcpStream;
 use tungstenite::protocol::Message;
+use tungstenite::client::IntoClientRequest;
+use futures_util::{SinkExt, StreamExt};
+
 use url::Url;
 
 async fn run_websocket_client() {
     // WebSocket 服务器的 URL
     let url = Url::parse("wss://your-signaling-server.com/room").unwrap();
+    let url_str = url.as_str().into_client_request().unwrap();
+
 
     // 连接到 WebSocket 服务器
-    let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
+    let (ws_stream, _) = connect_async(url_str).await.expect("Failed to connect");
 
     println!("Connected to the server");
 
     // 分离 WebSocket 流为发送和接收部分
-    let (write, read) = ws_stream.split();
+    let  (mut write, read) = ws_stream.split();
 
     // 设定角色
     let role = "bot"; // 可以是 "bot" 或其他角色
