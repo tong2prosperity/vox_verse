@@ -13,7 +13,7 @@ use std::{
     net::SocketAddr,
     sync::{Arc, Mutex},
 };
-use tokio::sync::broadcast;
+use tokio::{net::TcpListener, sync::broadcast};
 
 #[derive(Clone)]
 struct AppState {
@@ -34,8 +34,8 @@ async fn main() {
     // 启动服务器
     let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
     println!("Listening on {}", addr);
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    axum::serve(listener, app.into_make_service())
         .await
         .unwrap();
 }
