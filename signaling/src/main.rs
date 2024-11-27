@@ -9,11 +9,10 @@ use axum::{
 };
 use futures::{sink::SinkExt, stream::StreamExt};
 use std::{
-    collections::HashSet,
     net::SocketAddr,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
-use tokio::{net::TcpListener, sync::broadcast};
+use tokio::sync::broadcast;
 
 #[derive(Clone)]
 struct AppState {
