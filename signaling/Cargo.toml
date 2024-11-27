@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-axum = "0.7"
+axum = { version = "^0.7", features = ["ws"] }
 tokio = { version = "1.34.0", features = ["full"] }
 tokio-tungstenite = "0.24.0"
 tungstenite = "0.24.0"

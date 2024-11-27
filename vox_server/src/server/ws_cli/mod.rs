@@ -3,8 +3,10 @@ use tokio::net::TcpStream;
 use tungstenite::protocol::Message;
 use tungstenite::client::IntoClientRequest;
 use futures_util::{SinkExt, StreamExt};
+pub mod struct;
 
 use url::Url;
+use struct::*;
 
 async fn run_websocket_client() {
     // WebSocket 服务器的 URL
