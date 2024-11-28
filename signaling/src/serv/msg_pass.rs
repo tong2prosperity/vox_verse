@@ -16,15 +16,14 @@ pub async fn assign_room_handler(
         Some(server_id) => {
             // 通知选中的RTC服务器
             if let Some(server) = server_mngr.get_server(&server_id) {
-                let msg = RTCCallRequest {
-                    user_id: call_req.user_id,
-                    sdp: call_req.sdp,
+                let msg = ServerMsg {
+                    server_type: "rtc".to_string(),
+                    server_id: server_id.clone(),
                     payload: call_req.payload,
-                    event: RTCCallEvent::Call,
+                    event: ServerEvent::OnCalling,
                 };
                 
-                let mut server = server.lock().await;
-                server.send(serde_json::to_string(&msg).unwrap()).await;
+                server.sig_tx.send(msg).await;
                 
                 Json(RoomAssignResponse {
                     success: true,

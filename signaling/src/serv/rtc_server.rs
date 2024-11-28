@@ -3,6 +3,9 @@ use std::sync::Arc;
 use axum::extract::ws::{Message, WebSocket};
 use tokio::sync::{mpsc::Receiver, Mutex};
 
+use crate::serv::ServerEvent;
+use crate::serv::mngr::SERVER_MNGR;
+
 use super::ServerMsg;
 
 
@@ -27,16 +30,21 @@ impl RtcServer {
 
     pub async fn process(mut self) {
         loop {
-            select! {
+            tokio::select! {
                 msg = self.ws.recv() => {
                     match msg {
                         Some(Ok(Message::Text(text))) => println!("{}", text),
-                        _ => break,
+                        Some(Err(_)) | None => {
+                            // WebSocket connection closed or error occurred
+                            self.cleanup().await;
+                            return;
+                        }
+                        _ => {}
                     }
                 }
                 inner_msg = self.sig_rx.recv() => {
                     match inner_msg {
-                        Ok(msg) => {
+                        Some(msg) => {
                             match msg.event {
                                 ServerEvent::OnCalling => {
                                     self.send(msg.payload).await;
@@ -44,7 +52,7 @@ impl RtcServer {
                                 _ => {}
                             }
                         }
-                        Err(e) => error!("{}", e),
+                        None => break,
                     }
                 }
             }
@@ -53,5 +61,14 @@ impl RtcServer {
 
     pub async fn send(&mut self, msg: String) {
         self.ws.send(Message::Text(msg)).await.unwrap();
+    }
+
+    async fn cleanup(&mut self) {
+        // Clear managed rooms
+        self.managed_rooms.clear();
+
+        // Remove the server from the global manager
+        let mut server_mngr = SERVER_MNGR.lock().await;
+        server_mngr.remove_rtc_server(&self.server_id);
     }
 }
