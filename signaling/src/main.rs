@@ -28,6 +28,7 @@ async fn main() {
     // 创建路由
     let app = Router::new()
         .route("/ws", get(ws_handler))
+        .route("/server_mngr", get(server_mngr))
         .with_state(app_state);
 
     // 启动服务器
