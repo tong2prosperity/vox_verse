@@ -1,3 +1,7 @@
+pub mod serv;
+pub mod app;
+
+use app::AppState;
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -14,10 +18,7 @@ use std::{
 };
 use tokio::sync::broadcast;
 
-#[derive(Clone)]
-struct AppState {
-    sender: broadcast::Sender<String>,
-}
+
 
 #[tokio::main]
 async fn main() {
@@ -28,7 +29,7 @@ async fn main() {
     // 创建路由
     let app = Router::new()
         .route("/ws", get(ws_handler))
-        .route("/server_mngr", get(server_mngr))
+        .route("/server_mngr", get(serv::mngr::server_mngr_handler))
         .with_state(app_state);
 
     // 启动服务器
