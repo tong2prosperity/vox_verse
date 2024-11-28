@@ -1,6 +1,12 @@
 pub mod serv;
 pub mod app;
 
+use env_logger::{Builder, WriteStyle};
+use chrono::Local;
+use std::io::Write;
+
+use log::{info, error, debug};
+
 use app::AppState;
 use axum::{
     extract::{
@@ -8,7 +14,7 @@ use axum::{
         State,
     },
     response::IntoResponse,
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use futures::{sink::SinkExt, stream::StreamExt};
@@ -22,6 +28,20 @@ use tokio::sync::broadcast;
 
 #[tokio::main]
 async fn main() {
+    Builder::from_default_env()
+    .format(|buf, record| {
+        writeln!(
+            buf,
+            "{} [{}] - {}",
+            Local::now().format("%Y-%m-%d %H:%M:%S"),
+            record.level(),
+            record.args()
+        )
+    })
+    .write_style(WriteStyle::Always)
+    .filter_level(log::LevelFilter::Debug)
+    .init();
+
     // 创建广播通道
     let (sender, _) = broadcast::channel(16);
     let app_state = Arc::new(AppState { sender });
@@ -30,11 +50,14 @@ async fn main() {
     let app = Router::new()
         .route("/ws", get(ws_handler))
         .route("/server_mngr", get(serv::mngr::server_mngr_handler))
+        .route("/assign_room", post(serv::msg_pass::assign_room_handler))
         .with_state(app_state);
+
+    info!("Starting server on port 8080");
 
     // 启动服务器
     let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
-    println!("Listening on {}", addr);
+    info!("Listening on {}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app.into_make_service())
         .await
@@ -49,6 +72,7 @@ async fn ws_handler(
 }
 
 async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
+    debug!("New connection {:?}", socket.protocol());
     let (mut sender, mut receiver) = socket.split();
 
     // 订阅广播通道
