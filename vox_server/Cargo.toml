@@ -16,3 +16,4 @@ webrtc = "0.11.0"
 chrono = "0.4"
 uuid = {version = "1.11", features = ["v4", "fast-rng"]}
 anyhow = "1.0"
+audiopus = "0.2.0"

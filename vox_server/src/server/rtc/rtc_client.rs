@@ -1,3 +1,4 @@
+use audio_processor::AudioProcessor;
 use webrtc::interceptor::report::receiver;
 
 use super::*;
@@ -27,7 +28,7 @@ impl RTCClient {
     }
 
     // 处理远程音频轨道
-    async fn handle_track(&self, track: Arc<TrackRemote>) {
+    async fn handle_track(track: Arc<TrackRemote>) {
         let mut processor = match AudioProcessor::new() {
             Ok(p) => p,
             Err(e) => {
@@ -65,12 +66,12 @@ impl RTCClient {
         self.peer_connection.set_remote_description(offer).await?;
 
         // 监听音频轨道
-        let pc = Arc::new(self.clone());
+        
         self.peer_connection.on_track(Box::new(move |track, _receiver, _transceiver| {
-            let pc2 = pc.clone();
+        
             Box::pin(async move {
                 if track.kind() == RTPCodecType::Audio {
-                    pc2.handle_track(track).await;
+                    Self::handle_track(track).await;
                 }
             })
         }));
@@ -161,7 +162,7 @@ impl RTCClient {
 
 
 impl WebRTCHandler for RTCClient {
-    async fn generate_answer(&self, offer_sdp: &str) -> String {
+    async fn generate_answer(&mut self, offer_sdp: &str) -> String {
         self.handle_offer(offer_sdp.to_string()).await.unwrap()
     }
 }
