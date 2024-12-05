@@ -4,7 +4,7 @@ use structs::CallRequest;
 
 use super::*;
 
-pub async fn assign_room_handler(
+pub async fn caller_handler(
     State(state): State<Arc<AppState>>,
     Json(call_req): Json<CallRequest>,
 ) -> impl IntoResponse {
@@ -12,7 +12,7 @@ pub async fn assign_room_handler(
 
     let room_id = xid::new().to_string();
     
-    match server_mngr.assign_room(room_id.clone()).await {
+    match server_mngr.user_calling(room_id.clone()).await {
         Some(server_id) => {
             // 通知选中的RTC服务器
             if let Some(server) = server_mngr.get_server(&server_id) {
@@ -20,16 +20,26 @@ pub async fn assign_room_handler(
                     server_type: "rtc".to_string(),
                     server_id: server_id.clone(),
                     payload: call_req.payload,
-                    event: ServerEvent::OnCalling,
+                    event: ServerEvent::Calling,
                 };
                 
-                server.sig_tx.send(msg).await;
-                
-                Json(RoomAssignResponse {
-                    success: true,
-                    server_id: Some(server_id),
-                    error: None,
-                })
+                match server.sig_tx.send(msg).await {
+                    Ok(_) => {
+                        Json(RoomAssignResponse {
+                            success: true,
+                            server_id: Some(server_id),
+                            error: None,
+                        })
+                    }
+                    Err(e) => {
+                        error!("send msg to rtc server error: {}", e);
+                        Json(RoomAssignResponse {
+                            success: false,
+                            server_id: None,
+                            error: Some(e.to_string()),
+                        })
+                    }
+                }
             } else {
                 Json(RoomAssignResponse {
                     success: false,

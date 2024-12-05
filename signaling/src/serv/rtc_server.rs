@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket};
+use log::{debug, error};
 use tokio::sync::{mpsc::Receiver, Mutex};
 
 use crate::serv::ServerEvent;
@@ -33,7 +34,7 @@ impl RtcServer {
             tokio::select! {
                 msg = self.ws.recv() => {
                     match msg {
-                        Some(Ok(Message::Text(text))) => println!("{}", text),
+                        Some(Ok(Message::Text(text))) => debug!("{}", text),
                         Some(Err(_)) | None => {
                             // WebSocket connection closed or error occurred
                             self.cleanup().await;
@@ -46,10 +47,13 @@ impl RtcServer {
                     match inner_msg {
                         Some(msg) => {
                             match msg.event {
-                                ServerEvent::OnCalling => {
-                                    self.send(msg.payload).await;
+                                ServerEvent::Calling => {
+                                    debug!("recv oncalling msg: {}", serde_json::to_string(&msg).unwrap());
+                                    self.send(serde_json::to_string(&msg).unwrap()).await;
                                 }
-                                _ => {}
+                                _ => {
+                                    debug!("recv msg: {}", serde_json::to_string(&msg).unwrap());
+                                }
                             }
                         }
                         None => break,
@@ -60,7 +64,11 @@ impl RtcServer {
     }
 
     pub async fn send(&mut self, msg: String) {
-        self.ws.send(Message::Text(msg)).await.unwrap();
+        debug!("send msg: {}", msg);
+        match self.ws.send(Message::Text(msg)).await {
+            Ok(_) => debug!("send msg success"),
+            Err(e) => error!("send msg error: {}", e),
+        }
     }
 
     async fn cleanup(&mut self) {

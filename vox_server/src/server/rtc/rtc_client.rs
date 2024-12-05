@@ -13,11 +13,8 @@ pub struct RTCClient {
 
 
 impl RTCClient {
-    pub async fn new() -> Result<Self, Error> {
-
+    pub async fn new() -> Result<Self> {
         let mut registry = Registry::new();
-        
-        
         let mut media_engine = MediaEngine::default();
         registry = register_default_interceptors(registry, &mut media_engine)?;
         let api = APIBuilder::new().with_media_engine(media_engine).with_interceptor_registry(registry).build();
@@ -27,46 +24,12 @@ impl RTCClient {
         Ok(Self { peer_connection, api, track_id: uuid::Uuid::new_v4().to_string(), rtp_sender: None, audio_processor: None })
     }
 
-    // 处理远程音频轨道
-    async fn handle_track(track: Arc<TrackRemote>) {
-        let mut processor = match AudioProcessor::new() {
-            Ok(p) => p,
-            Err(e) => {
-                println!("创建音频处理器失败: {}", e);
-                return;
-            }
-        };
-        
-        let mut buff = vec![0u8; 1920];
-        
-        loop {
-            match track.read(&mut buff).await {
-                Ok((n, _)) => {
-                    if n.payload.len() > 0 {
-                        match processor.process(&n.payload).await {
-                            Ok(pcm_data) => {
-                                println!("解码得到 {} 个PCM样本", pcm_data.len());
-                                // 这里可以进一步处理PCM数据
-                            }
-                            Err(e) => println!("处理音频数据失败: {}", e)
-                        }
-                    }
-                }
-                Err(err) => {
-                    println!("读取音频数据出错: {}", err);
-                    break;
-                }
-            }
-        }
-    }
-
-    pub async fn handle_offer(&mut self, offer_sdp: String) -> Result<String, Error> {
+    pub async fn handle_offer(&mut self, offer_sdp: String) -> Result<String> {
         // 设置远程描述(Offer)
         let offer = webrtc::peer_connection::sdp::session_description::RTCSessionDescription::offer(offer_sdp)?;
         self.peer_connection.set_remote_description(offer).await?;
 
         // 监听音频轨道
-        
         self.peer_connection.on_track(Box::new(move |track, _receiver, _transceiver| {
         
             Box::pin(async move {
@@ -84,26 +47,7 @@ impl RTCClient {
     }
 
 
-    async fn setup_media(&mut self) -> Result<()> {
-        let audio_track = Arc::new(TrackLocalStaticSample::new(
-            RTCRtpCodecCapability {
-                mime_type: MIME_TYPE_OPUS.to_owned(),
-                clock_rate: 24000,
-                channels: 1,
-                ..Default::default()
-            },
-            "audio_tts_res_track".to_owned(),
-            self.track_id.to_owned(),
-        ));
-        
-        let rtp_sender = self.peer_connection.add_track(audio_track).await?;
-        tokio::spawn(Self::tts_audio_rtcp_handler(rtp_sender.clone()));
-
-
-        self.rtp_sender = Some(rtp_sender);
-        
-        Ok(())
-    }
+    
 
 
     fn setup_pc_other_handler(&mut self) -> Result<()> {
@@ -160,12 +104,61 @@ impl RTCClient {
     }
 }
 
+impl RTCClient {
 
-impl WebRTCHandler for RTCClient {
-    async fn generate_answer(&mut self, offer_sdp: &str) -> String {
-        self.handle_offer(offer_sdp.to_string()).await.unwrap()
+    // 处理远程音频轨道
+    async fn handle_track(track: Arc<TrackRemote>) {
+        let mut processor = match AudioProcessor::new() {
+            Ok(p) => p,
+            Err(e) => {
+                println!("创建音频处理器失败: {}", e);
+                return;
+            }
+        };
+        
+        let mut buff = vec![0u8; 1920];
+        
+        loop {
+            match track.read(&mut buff).await {
+                Ok((n, _)) => {
+                    if n.payload.len() > 0 {
+                        match processor.process(&n.payload).await {
+                            Ok(pcm_data) => {
+                                println!("解码得到 {} 个PCM样本", pcm_data.len());
+                                // 这里可以进一步处理PCM数据
+                            }
+                            Err(e) => println!("处理音频数据失败: {}", e)
+                        }
+                    }
+                }
+                Err(err) => {
+                    println!("读取音频数据出错: {}", err);
+                    break;
+                }
+            }
+        }
     }
+
+    async fn setup_media(&mut self) -> Result<()> {
+        let audio_track = Arc::new(TrackLocalStaticSample::new(
+            RTCRtpCodecCapability {
+                mime_type: MIME_TYPE_OPUS.to_owned(),
+                clock_rate: 24000,
+                channels: 1,
+                ..Default::default()
+            },
+            "audio_tts_res_track".to_owned(),
+            self.track_id.to_owned(),
+        ));
+        
+        let rtp_sender = self.peer_connection.add_track(audio_track).await?;
+        tokio::spawn(Self::tts_audio_rtcp_handler(rtp_sender.clone()));
+
+
+        self.rtp_sender = Some(rtp_sender);
+        
+        Ok(())
+    }
+
 }
-
-
 

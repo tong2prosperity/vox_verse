@@ -40,7 +40,7 @@ impl ServerMngr {
         min_server_id
     }
 
-    pub async fn assign_room(&mut self, room_id: String) -> Option<String> {
+    pub async fn user_calling(&mut self, room_id: String) -> Option<String> {
         if let Some(server_id) = self.select_server().await {
             if let Some(svr) = self.get_server(&server_id) {
                 svr.connected_users += 1;

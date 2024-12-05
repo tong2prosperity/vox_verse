@@ -1,12 +1,17 @@
+use serde_json::json;
 use tokio_tungstenite::connect_async;
 use tokio::net::TcpStream;
 use tungstenite::protocol::Message;
 use tungstenite::client::IntoClientRequest;
 use futures_util::{SinkExt, StreamExt};
-pub mod struct;
+use super::*;
 
 use url::Url;
-use struct::*;
+
+use crate::{bot::bot::Bot, config::CONFIG};
+
+use super::rtc::traits::WebRTCHandler;
+
 
 async fn run_websocket_client() {
     // WebSocket 服务器的 URL
@@ -17,7 +22,7 @@ async fn run_websocket_client() {
     // 连接到 WebSocket 服务器
     let (ws_stream, _) = connect_async(url_str).await.expect("Failed to connect");
 
-    println!("Connected to the server");
+    info!("Connected to the server");
 
     // 分离 WebSocket 流为发送和接收部分
     let  (mut write, read) = ws_stream.split();
@@ -58,7 +63,8 @@ async fn handle_server_message(ws_stream: &mut tokio_tungstenite::WebSocketStrea
             // 处理 offer，生成 answer
             if let Some(sdp) = data.get("sdp") {
                 let sdp_str = sdp.as_str().unwrap();
-                let answer = generate_answer(sdp_str).await;
+                let mut bot = Bot::new(CONFIG.read().await.clone()).await.unwrap();
+                let answer = bot.generate_answer(sdp_str.to_owned()).await;
                 // 发送 answer 回服务器
                 let answer_msg = json!({
                     "type": "answer",
@@ -73,35 +79,35 @@ async fn handle_server_message(ws_stream: &mut tokio_tungstenite::WebSocketStrea
 }
 
 
-async fn reconnect(url: Url, webrtc_handler: &dyn WebRTCHandler) {
-    loop {
-        match connect_async(url.clone()).await {
-            Ok((mut ws_stream, _)) => {
-                // 重新加入房间并设置角色
-                let join_msg = json!({
-                    "action": "join",
-                    "room": "room1",
-                    "role": "bot"
-                });
-                ws_stream.send(Message::Text(join_msg.to_string())).await.unwrap();
+// async fn reconnect(url: Url, webrtc_handler: &dyn WebRTCHandler) {
+//     loop {
+//         match connect_async(url.clone()).await {
+//             Ok((mut ws_stream, _)) => {
+//                 // 重新加入房间并设置角色
+//                 let join_msg = json!({
+//                     "action": "join",
+//                     "room": "room1",
+//                     "role": "bot"
+//                 });
+//                 ws_stream.send(Message::Text(join_msg.to_string())).await.unwrap();
 
-                // 处理消息
-                while let Some(msg) = ws_stream.next().await {
-                    match msg {
-                        Ok(Message::Text(text)) => {
-                            handle_server_message(&mut ws_stream, &text, webrtc_handler).await;
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            Err(e) => {
-                eprintln!("连接失败，正在重试: {:?}", e);
-                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-            }
-        }
-    }
-}
+//                 // 处理消息
+//                 while let Some(msg) = ws_stream.next().await {
+//                     match msg {
+//                         Ok(Message::Text(text)) => {
+//                             handle_server_message(&mut ws_stream, &text, webrtc_handler).await;
+//                         }
+//                         _ => {}
+//                     }
+//                 }
+//             }
+//             Err(e) => {
+//                 eprintln!("连接失败，正在重试: {:?}", e);
+//                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+//             }
+//         }
+//     }
+// }
 
 #[tokio::main]
 async fn main() {

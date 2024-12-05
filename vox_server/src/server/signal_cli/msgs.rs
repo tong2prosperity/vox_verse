@@ -6,6 +6,7 @@ use serde::{Serialize, Deserialize};
 pub enum ServerEvent {
     Register,
     Unregister,
+
     Calling,
 }
 
@@ -45,4 +46,13 @@ pub struct RoomAssignResponse {
     pub success: bool,
     pub server_id: Option<String>,
     pub error: Option<String>,
+}
+
+
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CallingPayload {
+    pub room_id: String,
+    pub user_id: String,
+    pub sdp: String,
 }

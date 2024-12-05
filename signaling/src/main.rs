@@ -50,13 +50,13 @@ async fn main() {
     let app = Router::new()
         .route("/ws", get(ws_handler))
         .route("/server_mngr", get(serv::mngr::server_mngr_handler))
-        .route("/assign_room", post(serv::msg_pass::assign_room_handler))
+        .route("/call", post(serv::msg_pass::caller_handler))
         .with_state(app_state);
 
     info!("Starting server on port 8080");
 
     // 启动服务器
-    let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
+    let addr = SocketAddr::from(([0, 0, 0, 0], 9527));
     info!("Listening on {}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app.into_make_service())
