@@ -1,6 +1,7 @@
 use super::*;
 use crate::audio_processor::biz_processor::{AsrProcessor, AudioBizProcessor, VadProcessor};
 use crate::config::AppConfig;
+use crate::error;
 use crate::server::rtc::rtc_client::RTCClient;
 use crate::server::rtc::traits::WebRTCHandler;
 use tokio::sync::mpsc;
@@ -47,5 +48,11 @@ impl WebRTCHandler for Bot {
     async fn generate_answer(&mut self, offer_sdp: String) -> String {
         let audio_tx = self.audio_tx.take().unwrap();
         self.rtc.handle_offer(offer_sdp, audio_tx).await.unwrap()
+    }
+
+    async fn handle_candidate(&mut self, candidate: String) {
+        if let Err(e) = self.rtc.add_ice_candidate(candidate).await {
+            error!("Failed to add ICE candidate: {:?}", e);
+        }
     }
 }

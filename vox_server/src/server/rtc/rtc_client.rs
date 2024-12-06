@@ -113,6 +113,18 @@ impl RTCClient {
             }
         }
     }
+
+    pub async fn add_ice_candidate(& self,candidate: String) -> Result<()> {
+        self.peer_connection
+            .add_ice_candidate(
+                webrtc::ice_transport::ice_candidate::RTCIceCandidateInit {
+                    candidate,
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to add ICE candidate: {:?}", e))
+    }
 }
 
 impl RTCClient {

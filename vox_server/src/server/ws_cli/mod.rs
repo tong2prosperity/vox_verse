@@ -74,6 +74,13 @@ async fn handle_server_message(ws_stream: &mut tokio_tungstenite::WebSocketStrea
                 ws_stream.send(Message::Text(answer_msg.to_string())).await.unwrap();
             }
         }
+        Some("candidate") => {
+            if let Some(candidate) = data.get("candidate") {
+                let candidate_str = candidate.as_str().unwrap();
+                let mut bot = Bot::new(CONFIG.read().await.clone()).await.unwrap();
+                bot.handle_candidate(candidate_str.to_owned()).await;
+            }
+        }
         _ => {}
     }
 }
