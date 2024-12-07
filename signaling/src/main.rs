@@ -24,7 +24,10 @@ use std::{
 };
 use tokio::sync::broadcast;
 
-
+use crate::serv::{
+    ws_handler::ws_handler as client_ws_handler,
+    server_mngr_handler,
+};
 
 #[tokio::main]
 async fn main() {
@@ -42,20 +45,18 @@ async fn main() {
     .filter_level(log::LevelFilter::Debug)
     .init();
 
-    // 创建广播通道
     let (sender, _) = broadcast::channel(16);
     let app_state = Arc::new(AppState { sender });
 
-    // 创建路由
     let app = Router::new()
-        .route("/ws", get(ws_handler))
+        .route("/ws/client", get(client_ws_handler))    // Client WebSocket endpoint
+        .route("/ws/server", get(server_mngr_handler))  // Server WebSocket endpoint
         .route("/server_mngr", get(serv::mngr::server_mngr_handler))
         .route("/call", post(serv::msg_pass::caller_handler))
         .with_state(app_state);
 
     info!("Starting server on port 8080");
 
-    // 启动服务器
     let addr = SocketAddr::from(([0, 0, 0, 0], 9527));
     info!("Listening on {}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();

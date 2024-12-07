@@ -1,4 +1,8 @@
 use tokio::sync::mpsc;
+use std::collections::HashMap;
+use tokio::sync::Mutex;
+use lazy_static::lazy_static;
+use xid;
 
 use super::*;
 
@@ -11,24 +15,35 @@ pub struct ManagedServer {
     pub connected_users: u32,
 }
 
+pub struct ClientInfo {
+    pub client_tx: mpsc::Sender<String>,
+    pub server_id: Option<String>,
+}
+
 pub struct ServerMngr {
-    // server id -> rtc server
-    //rtc_server_map: HashMap<String, Arc<Mutex<RtcServer>>>,
     mngr_server_map: HashMap<String, ManagedServer>,
     room_server_map: HashMap<String, String>, // room_id -> server_id
+    client_map: HashMap<String, ClientInfo>,  // client_id -> ClientInfo
 }
 
 impl ServerMngr {
     pub fn new() -> Self {
         Self {
-            //      rtc_server_map: HashMap::new(),
             mngr_server_map: HashMap::new(),
             room_server_map: HashMap::new(),
+            client_map: HashMap::new(),
         }
     }
 
+    pub fn generate_client_id() -> String {
+        xid::new().to_string()
+    }
+
+    pub async fn find_available_server(&mut self) -> Option<String> {
+        self.select_server().await
+    }
+
     pub async fn select_server(&self) -> Option<String> {
-        // find the server with the least rooms using loop
         let mut min_users = u32::MAX;
         let mut min_server_id = None;
         for (server_id, svr) in self.mngr_server_map.iter() {
@@ -38,6 +53,44 @@ impl ServerMngr {
             }
         }
         min_server_id
+    }
+
+    pub async fn add_client(&mut self, client_tx: mpsc::Sender<String>) -> String {
+        let client_id = Self::generate_client_id();
+        self.client_map.insert(client_id.clone(), ClientInfo {
+            client_tx,
+            server_id: None,
+        });
+        client_id
+    }
+
+    pub async fn assign_server_to_client(&mut self, client_id: &str, server_id: String) -> bool {
+        if let Some(client_info) = self.client_map.get_mut(client_id) {
+            client_info.server_id = Some(server_id.clone());
+            if let Some(server) = self.mngr_server_map.get_mut(&server_id) {
+                server.connected_users += 1;
+                return true;
+            }
+        }
+        false
+    }
+
+    pub async fn remove_client(&mut self, client_id: &str) {
+        if let Some(client_info) = self.client_map.remove(client_id) {
+            if let Some(server_id) = client_info.server_id {
+                if let Some(server) = self.mngr_server_map.get_mut(&server_id) {
+                    server.connected_users = server.connected_users.saturating_sub(1);
+                }
+            }
+        }
+    }
+
+    pub async fn get_client_server(&self, client_id: &str) -> Option<String> {
+        self.client_map.get(client_id).and_then(|info| info.server_id.clone())
+    }
+
+    pub async fn get_client_tx(&self, client_id: &str) -> Option<mpsc::Sender<String>> {
+        self.client_map.get(client_id).map(|info| info.client_tx.clone())
     }
 
     pub async fn user_calling(&mut self, room_id: String) -> Option<String> {
