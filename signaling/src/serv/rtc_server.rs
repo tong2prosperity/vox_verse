@@ -51,6 +51,10 @@ impl RtcServer {
                                     debug!("recv oncalling msg: {}", serde_json::to_string(&msg).unwrap());
                                     self.send(serde_json::to_string(&msg).unwrap()).await;
                                 }
+                                ServerEvent::Message => {
+                                    debug!("recv onmessage msg: {}", serde_json::to_string(&msg).unwrap());
+                                    self.send(serde_json::to_string(&msg).unwrap()).await;
+                                }
                                 _ => {
                                     debug!("recv msg: {}", serde_json::to_string(&msg).unwrap());
                                 }
