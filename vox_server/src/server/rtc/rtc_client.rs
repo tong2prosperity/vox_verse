@@ -1,8 +1,12 @@
-
-use std::sync::{Arc, Mutex};
 use en_decoder::{DecoderType, VoxDecoder};
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use webrtc::interceptor::report::receiver;
+
+use crate::server::signal_cli::{
+    msgs::{ServerEvent, ServerMsg},
+    SERVER_ID,
+};
 
 use super::*;
 
@@ -12,10 +16,11 @@ pub struct RTCClient {
     track_id: String,
     rtp_sender: Option<Arc<RTCRtpSender>>,
     audio_tx: Option<mpsc::Sender<Vec<i16>>>,
+    ws_tx: mpsc::Sender<String>,
 }
 
 impl RTCClient {
-    pub async fn new() -> Result<Self> {
+    pub async fn new(ws_tx: mpsc::Sender<String>) -> Result<Self> {
         let mut registry = Registry::new();
         let mut media_engine = MediaEngine::default();
         registry = register_default_interceptors(registry, &mut media_engine)?;
@@ -32,17 +37,21 @@ impl RTCClient {
             track_id: uuid::Uuid::new_v4().to_string(),
             rtp_sender: None,
             audio_tx: None,
+            ws_tx,
         })
     }
 
-    pub async fn handle_offer(&mut self, offer_sdp: String, audio_tx: mpsc::Sender<Vec<i16>>) -> Result<String> {
+    pub async fn handle_offer(
+        &mut self,
+        offer_sdp: String,
+        audio_tx: mpsc::Sender<Vec<i16>>,
+    ) -> Result<String> {
         // 设置远程描述(Offer)
         let offer =
             webrtc::peer_connection::sdp::session_description::RTCSessionDescription::offer(
                 offer_sdp,
             )?;
         self.peer_connection.set_remote_description(offer).await?;
-        
 
         // 监听音频轨道
         self.peer_connection
@@ -65,6 +74,37 @@ impl RTCClient {
     }
 
     fn setup_pc_other_handler(&mut self) -> Result<()> {
+        let ws_tx = self.ws_tx.clone();
+        
+        self.peer_connection
+            .on_data_channel(Box::new(move |channel| {
+                println!("Data channel opened");
+                Box::pin(async move {
+                    // 处理数据通道
+                })
+            }));
+
+        self.peer_connection
+            .on_ice_candidate(Box::new(move |candidate| {
+                let ws_tx = ws_tx.clone();
+                Box::pin(async move {
+                    if let Some(candidate) = candidate {
+                        let message = ServerMsg {
+                            server_type: "webrtc".to_string(),
+                            server_id: SERVER_ID.to_string(),
+                            payload: candidate.to_string(),
+                            event: ServerEvent::Candidate,
+                        };
+                        
+                        if let Ok(message_json) = serde_json::to_string(&message) {
+                            if let Err(e) = ws_tx.send(message_json).await {
+                                error!("Failed to send ICE candidate: {}", e);
+                            }
+                        }
+                    }
+                })
+            }));
+
         self.peer_connection
             .on_ice_connection_state_change(Box::new(
                 move |connection_state: RTCIceConnectionState| {
@@ -114,14 +154,12 @@ impl RTCClient {
         }
     }
 
-    pub async fn add_ice_candidate(& self,candidate: String) -> Result<()> {
+    pub async fn add_ice_candidate(&self, candidate: String) -> Result<()> {
         self.peer_connection
-            .add_ice_candidate(
-                webrtc::ice_transport::ice_candidate::RTCIceCandidateInit {
-                    candidate,
-                    ..Default::default()
-                },
-            )
+            .add_ice_candidate(webrtc::ice_transport::ice_candidate::RTCIceCandidateInit {
+                candidate,
+                ..Default::default()
+            })
             .await
             .map_err(|e| anyhow::anyhow!("Failed to add ICE candidate: {:?}", e))
     }

@@ -1,4 +1,7 @@
+use std::collections::HashMap;
+
 use serde_json::json;
+use signal_cli::{msgs::{CallingPayload, CandidatePayload, ServerEvent, ServerMsg}, SERVER_ID};
 use tokio_tungstenite::connect_async;
 use tokio::net::TcpStream;
 use tungstenite::protocol::Message;
@@ -14,45 +17,79 @@ use super::rtc::traits::WebRTCHandler;
 
 
 async fn run_websocket_client() {
-    // WebSocket 服务器的 URL
-    let url = Url::parse("wss://your-signaling-server.com/room").unwrap();
+    let url = Url::parse(&CONFIG.read().await.server.signaling_server).unwrap();
     let url_str = url.as_str().into_client_request().unwrap();
-
 
     // 连接到 WebSocket 服务器
     let (ws_stream, _) = connect_async(url_str).await.expect("Failed to connect");
-
     info!("Connected to the server");
 
-    // 分离 WebSocket 流为发送和接收部分
-    let  (mut write, read) = ws_stream.split();
+    let (mut write, mut read) = ws_stream.split();
 
-    // 设定角色
-    let role = "bot"; // 可以是 "bot" 或其他角色
+    // 注册为 RTC 服务器
+    let register_msg = ServerMsg {
+        server_type: "rtc".to_string(),
+        server_id: SERVER_ID.to_string(),
+        payload: "".to_string(), 
+        event: ServerEvent::Register,
+    };
 
-    // 发送角色信息到服务器
-    let role_message = Message::Text(format!("{{\"role\": \"{}\"}}", role));
-    write.send(role_message).await.expect("Failed to send role");
+    write.send(Message::Text(serde_json::to_string(&register_msg).unwrap()))
+        .await
+        .expect("Failed to send register message");
 
-    // 接收消息
-    tokio::spawn(async move {
-        read.for_each(|message| async {
-            match message {
-                Ok(msg) => {
-                    if let Message::Text(text) = msg {
-                        println!("Received: {}", text);
-                        // 处理接收到的 WebRTC offer 并生成 answer
-                        // 这里预留接口
+    // 管理所有 bot 实例
+    let mut bots: HashMap<String, Bot> = HashMap::new();
+
+    // 处理接收到的消息
+    while let Some(Ok(msg)) = read.next().await {
+        if let Message::Text(text) = msg {
+            match serde_json::from_str::<ServerMsg>(&text) {
+                Ok(server_msg) => {
+                    match server_msg.event {
+                        ServerEvent::Calling => {
+                            if let Ok(payload) = serde_json::from_str::<CallingPayload>(&server_msg.payload) {
+                                // 为新用户创建 bot
+                                let mut bot = Bot::new(CONFIG.read().await.clone()).await.unwrap();
+                                bot.setup_audio_processor().await;
+                                bots.insert(payload.user_id.clone(), bot);
+
+                                // 处理 offer
+                                if let Some(bot) = bots.get_mut(&payload.user_id) {
+                                    let answer = bot.generate_answer(payload.sdp).await;
+                                    
+                                    // 发送 answer
+                                    let answer_msg = ServerMsg {
+                                        server_type: "rtc".to_string(),
+                                        server_id: SERVER_ID.to_string(),
+                                        payload: serde_json::json!({
+                                            "type": "answer",
+                                            "sdp": answer,
+                                            "user_id": payload.user_id,
+                                        }).to_string(),
+                                        event: ServerEvent::Answer,
+                                    };
+
+                                    write.send(Message::Text(serde_json::to_string(&answer_msg).unwrap()))
+                                        .await
+                                        .expect("Failed to send answer");
+                                }
+                            }
+                        },
+                        ServerEvent::Candidate => {
+                            if let Ok(payload) = serde_json::from_str::<CandidatePayload>(&server_msg.payload) {
+                                if let Some(bot) = bots.get_mut(&payload.user_id) {
+                                    bot.handle_candidate(payload.candidate).await;
+                                }
+                            }
+                        },
+                        _ => {}
                     }
                 }
-                Err(e) => {
-                    eprintln!("Error receiving message: {}", e);
-                }
+                Err(e) => error!("Failed to parse server message: {}", e),
             }
-        }).await;
-    });
-
-    // 其他逻辑...
+        }
+    }
 }
 
 async fn handle_server_message(ws_stream: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>, msg: &str) {

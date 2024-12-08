@@ -1,4 +1,3 @@
-
 use serde::{Serialize, Deserialize};
 
 #[repr(i32)]
@@ -8,6 +7,8 @@ pub enum ServerEvent {
     Unregister,
 
     Calling,
+    Candidate,
+    Answer,
 }
 
 
@@ -55,4 +56,10 @@ pub struct CallingPayload {
     pub room_id: String,
     pub user_id: String,
     pub sdp: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CandidatePayload {
+    pub user_id: String,
+    pub candidate: String,
 }

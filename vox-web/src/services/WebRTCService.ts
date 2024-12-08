@@ -1,50 +1,56 @@
 import { Message, User } from '../types/types';
-import io, { Socket } from 'socket.io-client';
 
 export class WebRTCService {
-    private socket: Socket;
+    private ws: WebSocket;
     private peerConnections: Map<string, RTCPeerConnection> = new Map();
     private localStream: MediaStream | null = null;
     private onStreamCallback: ((stream: MediaStream, userId: string) => void) | null = null;
+    private clientId: string | null = null;
 
     constructor(private user: User) {
-        this.socket = io('ws://localhost:8000');
-        this.setupSocketListeners();
+        this.ws = new WebSocket('ws://localhost:9527/ws/client');
+        this.setupWebSocketListeners();
     }
 
-    private setupSocketListeners() {
-        this.socket.on('connect', () => {
+    private setupWebSocketListeners() {
+        this.ws.onopen = () => {
             console.log('Connected to signaling server');
-            this.socket.emit('join', this.user);
-        });
+        };
 
-        this.socket.on('offer', async (message: Message) => {
-            const pc = await this.createPeerConnection(message.sender.id);
-            await pc.setRemoteDescription(new RTCSessionDescription(message.data));
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            
-            this.socket.emit('answer', {
-                type: 'answer',
-                sender: this.user,
-                target: message.sender.id,
-                data: answer
-            });
-        });
+        this.ws.onmessage = async (event) => {
+            const message = JSON.parse(event.data);
+            console.log('Received message:', message);
 
-        this.socket.on('answer', async (message: Message) => {
-            const pc = this.peerConnections.get(message.sender.id);
-            if (pc) {
-                await pc.setRemoteDescription(new RTCSessionDescription(message.data));
+            switch (message.type) {
+                case 'connected':
+                    this.clientId = message.client_id;
+                    // 连接后发送connect消息来请求分配RTC服务器
+                    this.ws.send(JSON.stringify({
+                        type: 'connect',
+                        payload: {}
+                    }));
+                    break;
+                    
+                case 'server_assigned':
+                    // 服务器分配完成，可以开始呼叫
+                    console.log('RTC server assigned:', message.server_id);
+                    break;
+
+                case 'answer':
+                    const pc = this.peerConnections.get(message.user_id);
+                    if (pc) {
+                        await pc.setRemoteDescription(new RTCSessionDescription(message.sdp));
+                    }
+                    break;
+
+                case 'candidate':
+                    const peerConnection = this.peerConnections.get(message.user_id);
+                    if (peerConnection) {
+                        await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
+                    }
+                    break;
             }
-        });
-
-        this.socket.on('ice-candidate', async (message: Message) => {
-            const pc = this.peerConnections.get(message.sender.id);
-            if (pc) {
-                await pc.addIceCandidate(new RTCIceCandidate(message.data));
-            }
-        });
+        };
     }
 
     private async createPeerConnection(targetUserId: string): Promise<RTCPeerConnection> {
@@ -56,12 +62,14 @@ export class WebRTCService {
 
         pc.onicecandidate = (event) => {
             if (event.candidate) {
-                this.socket.emit('ice-candidate', {
-                    type: 'ice-candidate',
-                    sender: this.user,
-                    target: targetUserId,
-                    data: event.candidate
-                });
+                this.ws.send(JSON.stringify({
+                    type: 'message',
+                    payload: {
+                        type: 'candidate',
+                        user_id: targetUserId,
+                        candidate: event.candidate
+                    }
+                }));
             }
         };
 
@@ -88,12 +96,14 @@ export class WebRTCService {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
 
-        this.socket.emit('offer', {
-            type: 'offer',
-            sender: this.user,
-            target: targetUserId,
-            data: offer
-        });
+        this.ws.send(JSON.stringify({
+            type: 'message',
+            payload: {
+                type: 'calling',
+                user_id: targetUserId,
+                sdp: offer
+            }
+        }));
     }
 
     public async initializeMedia() {
@@ -119,6 +129,6 @@ export class WebRTCService {
         if (this.localStream) {
             this.localStream.getTracks().forEach(track => track.stop());
         }
-        this.socket.disconnect();
+        this.ws.close();
     }
 }

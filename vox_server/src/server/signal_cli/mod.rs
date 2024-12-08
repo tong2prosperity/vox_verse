@@ -12,12 +12,11 @@ use tungstenite::{client::IntoClientRequest, Message};
 
 use crate::config::CONFIG;
 
-
 use super::*;
 
 // lazy static a server id
 lazy_static::lazy_static! {
-    static ref SERVER_ID: String = xid::new().to_string();
+   pub static ref SERVER_ID: String = xid::new().to_string();
 }
 
 pub enum BotEvent {
@@ -150,9 +149,7 @@ impl SignalCli {
         // 启动新的 Bot
         let bot_event_tx_clone = bot_event_tx.clone();
         let rtc_cfg = CONFIG.read().await.rtc.clone();
-        tokio::spawn(async move {
-            
-        });
+        tokio::spawn(async move {});
 
         // 存储用户-Bot 配对信息
         let pair = UserBotPair {

@@ -7,7 +7,11 @@ pub enum ServerEvent {
     Register,
     Unregister,
     Calling,
+
     Message,
+
+    Answer,
+    Candidate,
 }
 
 
