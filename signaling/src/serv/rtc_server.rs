@@ -7,19 +7,19 @@ use tokio::sync::{mpsc::Receiver, Mutex};
 use crate::serv::ServerEvent;
 use crate::serv::mngr::SERVER_MNGR;
 
-use super::ServerMsg;
+use super::RawMessage;
 
 
 
 pub struct RtcServer {
     ws: WebSocket,
-    sig_rx: Receiver<ServerMsg>,
+    sig_rx: Receiver<RawMessage>,
     pub server_id: String,
     pub managed_rooms: Vec<String>,
 }
 
 impl RtcServer {
-    pub fn new(server_id: String, ws: WebSocket, sig_rx: Receiver<ServerMsg>) -> Self {
+    pub fn new(server_id: String, ws: WebSocket, sig_rx: Receiver<RawMessage>) -> Self {
         Self {
             server_id,
             ws,
@@ -35,7 +35,7 @@ impl RtcServer {
                 msg = self.ws.recv() => {
                     match msg {
                         Some(Ok(Message::Text(text))) => {
-                            if let Ok(msg) = serde_json::from_str::<ServerMsg>(&text) {
+                            if let Ok(msg) = serde_json::from_str::<RawMessage>(&text) {
                                 match msg.event {
                                     ServerEvent::Answer => {
                                         // 转发 answer 给对应的客户端

@@ -3,6 +3,10 @@ name = "vox_verse"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "vox_server"
+path = "src/bin/main.rs"
+
 [dependencies]
 tokio = { version = "1.41", features = ["full"] }
 tokio-tungstenite = "0.24"
@@ -12,7 +16,7 @@ async-trait = "0.1"
 url = "2.5"
 futures-util = "0.3"
 tungstenite = "0.24"
-webrtc = "0.11.0"
+webrtc = "0.12.0"
 chrono = "0.4"
 uuid = {version = "1.11", features = ["v4", "fast-rng"]}
 anyhow = "1.0"

@@ -17,7 +17,7 @@ pub enum ServerEvent {
 
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ServerMsg {
+pub struct RawMessage {
     pub server_type: String,
     pub server_id: String,
     pub payload: String,

@@ -11,7 +11,7 @@ lazy_static! {
 }
 
 pub struct ManagedServer {
-    pub sig_tx: mpsc::Sender<ServerMsg>,
+    pub sig_tx: mpsc::Sender<RawMessage>,
     pub connected_users: u32,
 }
 
@@ -129,10 +129,10 @@ pub async fn server_mngr(mut socket: WebSocket, state: Arc<AppState>) {
 
     let mut rtc_server = None;
 
-    let (sig_tx, sig_rx) = mpsc::channel::<ServerMsg>(100);
+    let (sig_tx, sig_rx) = mpsc::channel::<RawMessage>(100);
     while let Some(Ok(Message::Text(text))) = socket.recv().await {
         // 解析注册消息
-        match serde_json::from_str::<ServerMsg>(&text) {
+        match serde_json::from_str::<RawMessage>(&text) {
             Ok(server_msg) => {
                 debug!("Server mngr received message: {:?}", server_msg);
                 match server_msg.event {

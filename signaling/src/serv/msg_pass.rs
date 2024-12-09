@@ -16,7 +16,7 @@ pub async fn caller_handler(
         Some(server_id) => {
             // 通知选中的RTC服务器
             if let Some(server) = server_mngr.get_server(&server_id) {
-                let msg = ServerMsg {
+                let msg = RawMessage {
                     server_type: "rtc".to_string(),
                     server_id: server_id.clone(),
                     payload: call_req.payload,

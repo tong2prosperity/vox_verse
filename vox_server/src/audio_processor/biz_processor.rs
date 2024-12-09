@@ -2,7 +2,7 @@ use super::*;
 use tokio::sync::mpsc;
 
 // 音频处理能力的trait
-pub trait AudioCapability: Send + 'static {
+pub trait AudioCapability: Send + Sync + 'static {
     fn process(&mut self, pcm_data: &[i16]) -> Result<()>;
 }
 

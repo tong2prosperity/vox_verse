@@ -8,7 +8,7 @@ use futures::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
 use serde::{de, Deserialize, Serialize};
 
-use crate::serv::{ServerEvent, ServerMsg};
+use crate::serv::{ServerEvent, RawMessage};
 
 use super::mngr::SERVER_MNGR;
 use super::AppState;
@@ -114,7 +114,7 @@ async fn handle_client_ws(socket: WebSocket, state: Arc<AppState>) {
                         if let Some(server_id) = server_mngr.get_client_server(&client_id_clone).await {
                             if let Some(server) = server_mngr.get_server(&server_id) {
                                 debug!("Forwarding message from client {} to server {}", client_id_clone, server_id);
-                                if let Err(e) = server.sig_tx.send(ServerMsg {
+                                if let Err(e) = server.sig_tx.send(RawMessage {
                                     server_type: "rtc".to_string(),
                                     server_id,
                                     payload: msg.payload,

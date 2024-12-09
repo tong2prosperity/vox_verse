@@ -5,4 +5,4 @@ pub mod utils;
 pub mod services;
 pub mod bot;
 pub mod prelude;
-
+pub mod msg_center;
