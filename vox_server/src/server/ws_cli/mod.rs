@@ -104,12 +104,10 @@ pub async fn run_signaling_client(bus_tx: mpsc::Sender<SignalingMessage>) {
     let (mut write, mut read) = ws_stream.split();
 
     // 注册为 RTC 服务器
-    let register_msg = ServerMsg {
-        server_type: "rtc".to_string(),
+    let register_msg = SignalingMessage::ServerAssigned {
         server_id: SERVER_ID.to_string(),
-        payload: "".to_string(), 
-        event: ServerEvent::Register,
     };
+      
 
     write.send(Message::Text(serde_json::to_string(&register_msg).unwrap()))
         .await

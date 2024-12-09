@@ -2,10 +2,10 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", content = "payload")]
 pub enum SignalingMessage {
     // 连接管理
-    ClientConnect {
-        
+    Call {
         from: String,
 
     },
@@ -70,4 +70,39 @@ pub enum AudioProcessingResult {
 pub struct WsMessage {
     pub message_type: SignalingMessage,
     pub payload: serde_json::Value,
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json;
+
+    #[test]
+    fn test_signaling_message_json() {
+        let message = SignalingMessage::Call {
+            from: "client_123".to_string(),
+        };
+
+        let json = serde_json::to_string(&message).unwrap();
+        println!("ClientConnect JSON: {}", json);
+
+        let message = SignalingMessage::ServerAssigned {
+            server_id: "server_456".to_string(),
+        };
+
+        let json = serde_json::to_string(&message).unwrap();
+        println!("ServerAssigned JSON: {}", json);
+
+        let message = SignalingMessage::Offer {
+            from: "client_123".to_string(),
+            to: "client_456".to_string(),
+            sdp: "sdp_data".to_string(),
+        };
+
+        let json = serde_json::to_string(&message).unwrap();
+        println!("Offer JSON: {}", json);
+
+        // Add more tests for other variants as needed
+    }
 }

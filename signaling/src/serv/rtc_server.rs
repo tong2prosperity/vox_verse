@@ -2,24 +2,26 @@ use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket};
 use log::{debug, error};
+use serde::Deserialize;
 use tokio::sync::{mpsc::Receiver, Mutex};
 
 use crate::serv::ServerEvent;
 use crate::serv::mngr::SERVER_MNGR;
 
+use super::structs::SignalingMessage;
 use super::RawMessage;
 
 
 
 pub struct RtcServer {
     ws: WebSocket,
-    sig_rx: Receiver<RawMessage>,
+    sig_rx: Receiver<SignalingMessage>,
     pub server_id: String,
     pub managed_rooms: Vec<String>,
 }
 
 impl RtcServer {
-    pub fn new(server_id: String, ws: WebSocket, sig_rx: Receiver<RawMessage>) -> Self {
+    pub fn new(server_id: String, ws: WebSocket, sig_rx: Receiver<SignalingMessage>) -> Self {
         Self {
             server_id,
             ws,
@@ -62,18 +64,19 @@ impl RtcServer {
                 inner_msg = self.sig_rx.recv() => {
                     match inner_msg {
                         Some(msg) => {
-                            match msg.event {
-                                ServerEvent::Calling | ServerEvent::Candidate => {
-                                    self.send(serde_json::to_string(&msg).unwrap()).await;
-                                }
-                                ServerEvent::Message => {
-                                    debug!("recv onmessage msg: {}", serde_json::to_string(&msg).unwrap());
-                                    self.send(serde_json::to_string(&msg).unwrap()).await;
-                                }
-                                _ => {
-                                    debug!("recv msg: {}", serde_json::to_string(&msg).unwrap());
-                                }
-                            }
+                            self.send(serde_json::to_string(&msg).unwrap()).await;
+                            // match msg {
+                            //     SignalingMessage::Call {from} => {
+                            //         self.send(serde_json::to_string(&msg).unwrap()).await;
+                            //     }
+                            //     SignalingMessage::Offer {from, to, sdp} => {
+                            //         debug!("recv onmessage msg: {}", serde_json::to_string(&msg).unwrap());
+                            //         self.send(serde_json::to_string(&msg).unwrap()).await;
+                            //     }
+                            //     _ => {
+                            //         debug!("recv msg: {}", serde_json::to_string(&msg).unwrap());
+                            //     }
+                            // }
                         }
                         None => break,
                     }

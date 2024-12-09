@@ -1,3 +1,4 @@
+use structs::SignalingMessage;
 use tokio::sync::mpsc;
 use std::collections::HashMap;
 use tokio::sync::Mutex;
@@ -11,7 +12,7 @@ lazy_static! {
 }
 
 pub struct ManagedServer {
-    pub sig_tx: mpsc::Sender<RawMessage>,
+    pub sig_tx: mpsc::Sender<SignalingMessage>,
     pub connected_users: u32,
 }
 
@@ -22,7 +23,7 @@ pub struct ClientInfo {
 
 pub struct ServerMngr {
     mngr_server_map: HashMap<String, ManagedServer>,
-    room_server_map: HashMap<String, String>, // room_id -> server_id
+    client_server_map: HashMap<String, String>, // room_id -> server_id
     client_map: HashMap<String, ClientInfo>,  // client_id -> ClientInfo
 }
 
@@ -30,7 +31,7 @@ impl ServerMngr {
     pub fn new() -> Self {
         Self {
             mngr_server_map: HashMap::new(),
-            room_server_map: HashMap::new(),
+            client_server_map: HashMap::new(),
             client_map: HashMap::new(),
         }
     }
@@ -55,13 +56,12 @@ impl ServerMngr {
         min_server_id
     }
 
-    pub async fn add_client(&mut self, client_tx: mpsc::Sender<String>) -> String {
-        let client_id = Self::generate_client_id();
-        self.client_map.insert(client_id.clone(), ClientInfo {
+    pub async fn add_client(&mut self,client_id: &str, client_tx: mpsc::Sender<String>) {
+        self.client_map.insert(client_id.to_string(), ClientInfo {
             client_tx,
             server_id: None,
         });
-        client_id
+    
     }
 
     pub async fn assign_server_to_client(&mut self, client_id: &str, server_id: String) -> bool {
@@ -93,11 +93,11 @@ impl ServerMngr {
         self.client_map.get(client_id).map(|info| info.client_tx.clone())
     }
 
-    pub async fn user_calling(&mut self, room_id: String) -> Option<String> {
+    pub async fn user_calling(&mut self, client_id: String) -> Option<String> {
         if let Some(server_id) = self.select_server().await {
             if let Some(svr) = self.get_server(&server_id) {
                 svr.connected_users += 1;
-                self.room_server_map.insert(room_id, server_id.clone());
+                self.client_server_map.insert(client_id, server_id.clone());
                 return Some(server_id);
             }
         }
@@ -129,15 +129,15 @@ pub async fn server_mngr(mut socket: WebSocket, state: Arc<AppState>) {
 
     let mut rtc_server = None;
 
-    let (sig_tx, sig_rx) = mpsc::channel::<RawMessage>(100);
+    let (sig_tx, sig_rx) = mpsc::channel::<SignalingMessage>(100);
     while let Some(Ok(Message::Text(text))) = socket.recv().await {
         // 解析注册消息
-        match serde_json::from_str::<RawMessage>(&text) {
+        match serde_json::from_str::<SignalingMessage>(&text) {
             Ok(server_msg) => {
                 debug!("Server mngr received message: {:?}", server_msg);
-                match server_msg.event {
-                    ServerEvent::Register => {
-                        rtc_server = Some(RtcServer::new(server_msg.server_id, socket, sig_rx));
+                match server_msg {
+                    SignalingMessage::ServerAssigned { server_id } => {
+                        rtc_server = Some(RtcServer::new(server_id, socket, sig_rx));
                         break;
                     }
                     _ => break,

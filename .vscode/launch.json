@@ -14,10 +14,26 @@
                 "args": [
                     "build",
                     "--bin=signaling",
-                    "--package=signaling"
                 ],
                 "filter": {
                     "name": "signaling",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'vox_server'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=vox_server",
+                ],
+                "filter": {
+                    "name": "vox_server",
                     "kind": "bin"
                 }
             },

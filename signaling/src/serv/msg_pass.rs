@@ -1,6 +1,6 @@
 
 use mngr::SERVER_MNGR;
-use structs::CallRequest;
+use structs::{CallRequest, SignalingMessage};
 
 use super::*;
 
@@ -16,12 +16,9 @@ pub async fn caller_handler(
         Some(server_id) => {
             // 通知选中的RTC服务器
             if let Some(server) = server_mngr.get_server(&server_id) {
-                let msg = RawMessage {
-                    server_type: "rtc".to_string(),
-                    server_id: server_id.clone(),
-                    payload: call_req.payload,
-                    event: ServerEvent::Calling,
-                };
+                let msg =  SignalingMessage::Call {
+                    from: call_req.user_id,
+                };                  
                 
                 match server.sig_tx.send(msg).await {
                     Ok(_) => {

@@ -35,7 +35,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             server: ServerConfig {
-                signaling_server: "wss://your-signaling-server.com/room".to_string(),
+                signaling_server: "ws://localhost:9527/ws/server".to_string(),
             },
             log: LogConfig {
                 level: "info".to_string(),
