@@ -93,6 +93,8 @@ async fn handle_client_ws(socket: WebSocket, state: Arc<AppState>) {
     // }
 
     // Spawn task to receive messages from the WebSocket
+    
+    let cli_id_copy = cli_id.clone();
 
     let mut receive_task = tokio::spawn(async move {
         debug!("Starting WebSocket receive task for client");
@@ -106,15 +108,12 @@ async fn handle_client_ws(socket: WebSocket, state: Arc<AppState>) {
                         let client_id = from.clone();
                         info!("Client {} requesting server connection", client_id);
 
-                        _ = server_mngr.add_client(&client_id, msg_tx.clone()).await;
-                        if let Some(server_id) = server_mngr.find_available_server().await {
+                        _ = server_mngr.register_client(&client_id, msg_tx.clone()).await;
+                        if let Some(server_id) = server_mngr.assign_server_to_client(&client_id).await {
                             debug!(
                                 "Found available server {} for client {}",
                                 server_id, client_id
                             );
-                            if server_mngr
-                                .assign_server_to_client(&client_id, server_id.clone())
-                                .await
                             {
                                 info!(
                                     "Successfully assigned server {} to client {}",
@@ -129,11 +128,6 @@ async fn handle_client_ws(socket: WebSocket, state: Arc<AppState>) {
                                 debug!("Sending server assignment response: {:?}", response);
                                 let _ =
                                     msg_tx.send(serde_json::to_string(&response).unwrap()).await;
-                            } else {
-                                warn!(
-                                    "Failed to assign server {} to client {}",
-                                    server_id, client_id
-                                );
                             }
                         } else {
                             warn!("No available server found for client {}", client_id);
@@ -143,12 +137,8 @@ async fn handle_client_ws(socket: WebSocket, state: Arc<AppState>) {
                     _ => {
                         let to_pass = text.clone();
                         info!("passing through the message from client {:?}", to_pass);
-                        // let response = ClientResponse {
-                        //     msg_type: "error".to_string(),
-                        //     client_id: from.clone(),
-                        //     server_id: None,
-                        //     error: Some(format!("Unknown message type: {:?}", msg)),
-                        // };
+                        let msg = serde_json::from_str::<SignalingMessage>(&to_pass).unwrap();
+                        server_mngr.forward_to_server_by_client(&cli_id.clone(), msg).await;
                         let _ = msg_tx.send(to_pass).await;
                     }
                 }
@@ -175,7 +165,7 @@ async fn handle_client_ws(socket: WebSocket, state: Arc<AppState>) {
 
     // Clean up when the connection is closed
     let mut server_mngr = SERVER_MNGR.lock().await;
-    info!("Cleaning up connection for client {}", cli_id);
-    server_mngr.remove_client(&cli_id).await;
-    debug!("Client {} removed from server manager", cli_id);
+    info!("Cleaning up connection for client {}", cli_id_copy);
+    server_mngr.remove_client(&cli_id_copy).await;
+    debug!("Client {} removed from server manager", cli_id_copy);
 }
