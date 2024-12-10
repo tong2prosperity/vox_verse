@@ -1,11 +1,11 @@
-pub mod serv;
 pub mod app;
+pub mod serv;
 
-use env_logger::{Builder, WriteStyle};
 use chrono::Local;
+use env_logger::{Builder, WriteStyle};
 use std::io::Write;
 
-use log::{info, error, debug};
+use log::{debug, error, info};
 
 use app::AppState;
 use axum::{
@@ -18,39 +18,33 @@ use axum::{
     Router,
 };
 use futures::{sink::SinkExt, stream::StreamExt};
-use std::{
-    net::SocketAddr,
-    sync::Arc,
-};
+use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::broadcast;
 
-use crate::serv::{
-    call_handler::client_call_handler,
-    mngr::server_mngr_handler,
-};
+use crate::serv::{call_handler::client_call_handler, mngr::server_mngr_handler};
 
 #[tokio::main]
 async fn main() {
     Builder::from_default_env()
-    .format(|buf, record| {
-        writeln!(
-            buf,
-            "{} [{}] - {}",
-            Local::now().format("%Y-%m-%d %H:%M:%S"),
-            record.level(),
-            record.args()
-        )
-    })
-    .write_style(WriteStyle::Always)
-    .filter_level(log::LevelFilter::Debug)
-    .init();
+        .format(|buf, record| {
+            writeln!(
+                buf,
+                "{} [{}] - {}",
+                Local::now().format("%Y-%m-%d %H:%M:%S"),
+                record.level(),
+                record.args()
+            )
+        })
+        .write_style(WriteStyle::Always)
+        .filter_level(log::LevelFilter::Debug)
+        .init();
 
     let (sender, _) = broadcast::channel(16);
     let app_state = Arc::new(AppState { sender });
 
     let app = Router::new()
-        .route("/ws/client", get(client_call_handler))    // Client WebSocket endpoint
-        .route("/ws/server", get(server_mngr_handler))  // Server WebSocket endpoint
+        .route("/ws/client", get(client_call_handler)) // Client WebSocket endpoint
+        .route("/ws/server", get(server_mngr_handler)) // Server WebSocket endpoint
         .route("/server_mngr", get(serv::mngr::server_mngr_handler))
         .route("/call", post(serv::msg_pass::caller_handler))
         .with_state(app_state);
@@ -65,10 +59,7 @@ async fn main() {
         .unwrap();
 }
 
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> impl IntoResponse {
     ws.on_upgrade(|socket| handle_socket(socket, state))
 }
 

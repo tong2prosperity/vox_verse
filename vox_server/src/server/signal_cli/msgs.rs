@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[repr(i32)]
 #[derive(Debug, Serialize, Deserialize)]
@@ -11,8 +11,6 @@ pub enum ServerEvent {
     Answer,
 }
 
-
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ServerMsg {
     pub server_type: String,
@@ -20,7 +18,6 @@ pub struct ServerMsg {
     pub payload: String,
     pub event: ServerEvent,
 }
-
 
 #[repr(i32)]
 #[derive(Debug, Serialize, Deserialize)]
@@ -30,7 +27,6 @@ pub enum RTCCallEvent {
     Reject,
 }
 
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RTCCallRequest {
     pub user_id: String,
@@ -39,17 +35,12 @@ pub struct RTCCallRequest {
     pub event: RTCCallEvent,
 }
 
-
-
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RoomAssignResponse {
     pub success: bool,
     pub server_id: Option<String>,
     pub error: Option<String>,
 }
-
-
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CallingPayload {

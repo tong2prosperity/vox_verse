@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CallRequest {
@@ -7,8 +7,6 @@ pub struct CallRequest {
     pub payload: String,
 }
 
-
-
 use std::fmt::Debug;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,34 +14,30 @@ use std::fmt::Debug;
 pub enum SignalingMessage {
     // 连接管理
     Call {
-        
         from: String,
-        
     },
     ServerAssigned {
         server_id: String,
     },
-    
+
     // WebRTC 信令
     Offer {
-
         from: String,
         to: String,
         sdp: String,
     },
     Answer {
-
         from: String,
         to: String,
         sdp: String,
     },
     IceCandidate {
-    //    room_id: String,
+        //    room_id: String,
         from: String,
         to: String,
         candidate: String,
     },
-    
+
     // 房间事件
     RoomCreated {
         room_id: String,
@@ -56,7 +50,7 @@ pub enum SignalingMessage {
         room_id: String,
         user_id: String,
     },
-    
+
     // 音频处理
     AudioData {
         room_id: String,

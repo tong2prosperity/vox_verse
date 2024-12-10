@@ -68,8 +68,7 @@ pub fn create_decoder(
         DecoderType::Opus => {
             let decoder = OpusAudioDecoder::new(sample_rate, channels)?;
             Ok(Box::new(decoder))
-        }
-        // 未来添加更多解码器类型的匹配
+        } // 未来添加更多解码器类型的匹配
     }
 }
 

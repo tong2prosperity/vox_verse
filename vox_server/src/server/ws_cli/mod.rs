@@ -1,20 +1,22 @@
 use std::collections::HashMap;
 
-use serde_json::json;
-use signal_cli::{msgs::{CallingPayload, CandidatePayload, ServerEvent, ServerMsg}, SERVER_ID};
-use tokio_tungstenite::connect_async;
-use tokio::{net::TcpStream, sync::mpsc};
-use tungstenite::protocol::Message;
-use tungstenite::client::IntoClientRequest;
-use futures_util::{SinkExt, StreamExt};
 use super::*;
+use futures_util::{SinkExt, StreamExt};
+use serde_json::json;
+use signal_cli::{
+    msgs::{CallingPayload, CandidatePayload, ServerEvent, ServerMsg},
+    SERVER_ID,
+};
+use tokio::{net::TcpStream, sync::mpsc};
+use tokio_tungstenite::connect_async;
+use tungstenite::client::IntoClientRequest;
+use tungstenite::protocol::Message;
 
 use url::Url;
 
 use crate::{bot::bot::Bot, config::CONFIG, msg_center::signaling_msgs::SignalingMessage};
 
 use super::rtc::traits::WebRTCHandler;
-
 
 async fn run_websocket_client() {
     let url = Url::parse(&CONFIG.read().await.server.signaling_server).unwrap();
@@ -30,11 +32,12 @@ async fn run_websocket_client() {
     let register_msg = ServerMsg {
         server_type: "rtc".to_string(),
         server_id: SERVER_ID.to_string(),
-        payload: "".to_string(), 
+        payload: "".to_string(),
         event: ServerEvent::Register,
     };
 
-    write.send(Message::Text(serde_json::to_string(&register_msg).unwrap()))
+    write
+        .send(Message::Text(serde_json::to_string(&register_msg).unwrap()))
         .await
         .expect("Failed to send register message");
 
@@ -57,7 +60,7 @@ async fn run_websocket_client() {
                             //     // 处理 offer
                             //     if let Some(bot) = bots.get_mut(&payload.user_id) {
                             //         let answer = bot.generate_answer(payload.sdp).await;
-                                    
+
                             //         // 发送 answer
                             //         let answer_msg = ServerMsg {
                             //             server_type: "rtc".to_string(),
@@ -75,14 +78,16 @@ async fn run_websocket_client() {
                             //             .expect("Failed to send answer");
                             //     }
                             // }
-                        },
+                        }
                         ServerEvent::Candidate => {
-                            if let Ok(payload) = serde_json::from_str::<CandidatePayload>(&server_msg.payload) {
+                            if let Ok(payload) =
+                                serde_json::from_str::<CandidatePayload>(&server_msg.payload)
+                            {
                                 if let Some(bot) = bots.get_mut(&payload.user_id) {
                                     bot.handle_candidate(payload.candidate).await;
                                 }
                             }
-                        },
+                        }
                         _ => {}
                     }
                 }
@@ -91,7 +96,6 @@ async fn run_websocket_client() {
         }
     }
 }
-
 
 pub async fn run_signaling_client(bus_tx: mpsc::Sender<SignalingMessage>) {
     let url = Url::parse(&CONFIG.read().await.server.signaling_server).unwrap();
@@ -107,13 +111,11 @@ pub async fn run_signaling_client(bus_tx: mpsc::Sender<SignalingMessage>) {
     let register_msg = SignalingMessage::ServerAssigned {
         server_id: SERVER_ID.to_string(),
     };
-      
 
-    write.send(Message::Text(serde_json::to_string(&register_msg).unwrap()))
+    write
+        .send(Message::Text(serde_json::to_string(&register_msg).unwrap()))
         .await
         .expect("Failed to send register message");
-
-
 
     while let Some(msg) = read.next().await {
         if let Ok(Message::Text(text)) = msg {
@@ -121,7 +123,6 @@ pub async fn run_signaling_client(bus_tx: mpsc::Sender<SignalingMessage>) {
             bus_tx.send(msg).await.unwrap();
         }
     }
-
 }
 
 // async fn handle_server_message(ws_stream: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>, msg: &str) {
@@ -153,7 +154,6 @@ pub async fn run_signaling_client(bus_tx: mpsc::Sender<SignalingMessage>) {
 //         _ => {}
 //     }
 // }
-
 
 // async fn reconnect(url: Url, webrtc_handler: &dyn WebRTCHandler) {
 //     loop {

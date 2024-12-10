@@ -3,10 +3,13 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use webrtc::interceptor::report::receiver;
 
-use crate::{msg_center::{ signaling_msgs::SignalingMessage}, server::signal_cli::{
-    msgs::{ServerEvent, ServerMsg},
-    SERVER_ID,
-}};
+use crate::{
+    msg_center::signaling_msgs::SignalingMessage,
+    server::signal_cli::{
+        msgs::{ServerEvent, ServerMsg},
+        SERVER_ID,
+    },
+};
 
 use super::*;
 
@@ -22,7 +25,11 @@ pub struct RTCClient {
 }
 
 impl RTCClient {
-    pub async fn new(client_id: String,bot_id: String, ws_tx: mpsc::Sender<SignalingMessage>) -> Result<Self> {
+    pub async fn new(
+        client_id: String,
+        bot_id: String,
+        ws_tx: mpsc::Sender<SignalingMessage>,
+    ) -> Result<Self> {
         let mut registry = Registry::new();
         let mut media_engine = MediaEngine::default();
         registry = register_default_interceptors(registry, &mut media_engine)?;
@@ -87,7 +94,6 @@ impl RTCClient {
 
         // ICE Candidate 处理
         self.peer_connection.on_ice_candidate(Box::new(move |c| {
-            
             let client_id = client_id.clone();
             let bot_id = bot_id.clone();
 
@@ -107,22 +113,23 @@ impl RTCClient {
         }));
 
         // 连接状态变化处理
-        self.peer_connection.on_peer_connection_state_change(Box::new(move |s: RTCPeerConnectionState| {
-            let state = s.clone();
-            Box::pin(async move {
-                info!("Peer Connection State has changed: {}", state);
-                if state == RTCPeerConnectionState::Failed {
-                    error!("Peer Connection has failed");
-                }
-            })
-        }));
+        self.peer_connection
+            .on_peer_connection_state_change(Box::new(move |s: RTCPeerConnectionState| {
+                let state = s.clone();
+                Box::pin(async move {
+                    info!("Peer Connection State has changed: {}", state);
+                    if state == RTCPeerConnectionState::Failed {
+                        error!("Peer Connection has failed");
+                    }
+                })
+            }));
 
         Ok(())
     }
 
     fn setup_pc_other_handler(&mut self) -> Result<()> {
         let ws_tx: mpsc::Sender<SignalingMessage> = self.ws_tx.clone();
-        
+
         self.peer_connection
             .on_data_channel(Box::new(move |channel| {
                 println!("Data channel opened");

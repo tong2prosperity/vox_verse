@@ -1,9 +1,6 @@
-pub mod traits;
-pub mod rtc_client;
 pub mod en_decoder;
-
-
-
+pub mod rtc_client;
+pub mod traits;
 
 use std::sync::Arc;
 use traits::WebRTCHandler;
@@ -22,7 +19,6 @@ use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSampl
 use webrtc::track::track_remote::TrackRemote;
 use webrtc::Error;
 
-use crate::{info, error, warn, debug};
-
+use crate::{debug, error, info, warn};
 
 use anyhow::Result;

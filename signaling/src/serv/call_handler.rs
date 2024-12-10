@@ -1,20 +1,19 @@
-use std::sync::Arc;
 use axum::{
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
-    response::IntoResponse,
     extract::State,
+    response::IntoResponse,
 };
 use futures::{SinkExt, StreamExt};
+use serde::{de, Deserialize, Serialize};
+use std::sync::Arc;
 use structs::SignalingMessage;
 use tokio::sync::mpsc;
-use serde::{de, Deserialize, Serialize};
 
-use crate::serv::{ServerEvent, RawMessage};
+use crate::serv::{RawMessage, ServerEvent};
 
 use super::mngr::SERVER_MNGR;
 use super::AppState;
 use super::*;
-
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ClientMsgType {
@@ -25,7 +24,6 @@ pub enum ClientMsgType {
     Answer,
     Candidate,
 }
-
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ClientMsg {
@@ -58,8 +56,6 @@ async fn handle_client_ws(socket: WebSocket, state: Arc<AppState>) {
     let (mut sender, mut receiver) = socket.split();
     let (msg_tx, mut msg_rx) = mpsc::channel::<String>(100);
 
-    
-    
     info!("New client registered with ID: ");
     // 获取client_id 先读取一次信息
     let msg = if let Some(Ok(Message::Text(text))) = receiver.next().await {
@@ -97,24 +93,33 @@ async fn handle_client_ws(socket: WebSocket, state: Arc<AppState>) {
     // }
 
     // Spawn task to receive messages from the WebSocket
-    
+
     let mut receive_task = tokio::spawn(async move {
         debug!("Starting WebSocket receive task for client");
         while let Some(Ok(Message::Text(text))) = receiver.next().await {
             debug!("Received message from client  {}", text);
             if let Ok(msg) = serde_json::from_str::<SignalingMessage>(&text) {
                 let mut server_mngr = SERVER_MNGR.lock().await;
-                
+
                 match msg {
                     SignalingMessage::Call { from } => {
                         let client_id = from.clone();
                         info!("Client {} requesting server connection", client_id);
-                        
+
                         _ = server_mngr.add_client(&client_id, msg_tx.clone()).await;
                         if let Some(server_id) = server_mngr.find_available_server().await {
-                            debug!("Found available server {} for client {}", server_id, client_id);
-                            if server_mngr.assign_server_to_client(&client_id, server_id.clone()).await {
-                                info!("Successfully assigned server {} to client {}", server_id, client_id);
+                            debug!(
+                                "Found available server {} for client {}",
+                                server_id, client_id
+                            );
+                            if server_mngr
+                                .assign_server_to_client(&client_id, server_id.clone())
+                                .await
+                            {
+                                info!(
+                                    "Successfully assigned server {} to client {}",
+                                    server_id, client_id
+                                );
                                 let response = ClientResponse {
                                     msg_type: "server_assigned".to_string(),
                                     client_id: client_id.clone(),
@@ -122,14 +127,18 @@ async fn handle_client_ws(socket: WebSocket, state: Arc<AppState>) {
                                     error: None,
                                 };
                                 debug!("Sending server assignment response: {:?}", response);
-                                let _ = msg_tx.send(serde_json::to_string(&response).unwrap()).await;
+                                let _ =
+                                    msg_tx.send(serde_json::to_string(&response).unwrap()).await;
                             } else {
-                                warn!("Failed to assign server {} to client {}", server_id, client_id);
+                                warn!(
+                                    "Failed to assign server {} to client {}",
+                                    server_id, client_id
+                                );
                             }
                         } else {
                             warn!("No available server found for client {}", client_id);
                         }
-                    },
+                    }
 
                     _ => {
                         let to_pass = text.clone();

@@ -1,8 +1,8 @@
+use lazy_static::lazy_static;
+use std::collections::HashMap;
 use structs::SignalingMessage;
 use tokio::sync::mpsc;
-use std::collections::HashMap;
 use tokio::sync::Mutex;
-use lazy_static::lazy_static;
 use xid;
 
 use super::*;
@@ -24,7 +24,7 @@ pub struct ClientInfo {
 pub struct ServerMngr {
     mngr_server_map: HashMap<String, ManagedServer>,
     client_server_map: HashMap<String, String>, // room_id -> server_id
-    client_map: HashMap<String, ClientInfo>,  // client_id -> ClientInfo
+    client_map: HashMap<String, ClientInfo>,    // client_id -> ClientInfo
 }
 
 impl ServerMngr {
@@ -56,12 +56,14 @@ impl ServerMngr {
         min_server_id
     }
 
-    pub async fn add_client(&mut self,client_id: &str, client_tx: mpsc::Sender<String>) {
-        self.client_map.insert(client_id.to_string(), ClientInfo {
-            client_tx,
-            server_id: None,
-        });
-    
+    pub async fn add_client(&mut self, client_id: &str, client_tx: mpsc::Sender<String>) {
+        self.client_map.insert(
+            client_id.to_string(),
+            ClientInfo {
+                client_tx,
+                server_id: None,
+            },
+        );
     }
 
     pub async fn assign_server_to_client(&mut self, client_id: &str, server_id: String) -> bool {
@@ -86,11 +88,15 @@ impl ServerMngr {
     }
 
     pub async fn get_client_server(&self, client_id: &str) -> Option<String> {
-        self.client_map.get(client_id).and_then(|info| info.server_id.clone())
+        self.client_map
+            .get(client_id)
+            .and_then(|info| info.server_id.clone())
     }
 
     pub async fn get_client_tx(&self, client_id: &str) -> Option<mpsc::Sender<String>> {
-        self.client_map.get(client_id).map(|info| info.client_tx.clone())
+        self.client_map
+            .get(client_id)
+            .map(|info| info.client_tx.clone())
     }
 
     pub async fn user_calling(&mut self, client_id: String) -> Option<String> {

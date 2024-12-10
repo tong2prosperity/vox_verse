@@ -16,12 +16,17 @@ pub struct Bot {
     audio_tx: Option<mpsc::Sender<Vec<i16>>>,
     message_rx: mpsc::Receiver<SignalingMessage>,
     ws_tx: mpsc::Sender<SignalingMessage>,
-    
+
     processor_handle: Option<JoinHandle<()>>,
 }
 
 impl Bot {
-    pub async fn new(cfg: AppConfig,client_id: String, ws_tx: mpsc::Sender<SignalingMessage>, message_rx: mpsc::Receiver<SignalingMessage>) -> Result<Self, Error> {
+    pub async fn new(
+        cfg: AppConfig,
+        client_id: String,
+        ws_tx: mpsc::Sender<SignalingMessage>,
+        message_rx: mpsc::Receiver<SignalingMessage>,
+    ) -> Result<Self, Error> {
         let bot_id = format!("bot_{}", xid::new().to_string());
         let rtc = RTCClient::new(client_id.clone(), bot_id.clone(), ws_tx.clone()).await?;
         Ok(Self {
@@ -32,7 +37,7 @@ impl Bot {
             audio_tx: None,
             message_rx,
             ws_tx: ws_tx.clone(),
-    
+
             processor_handle: None,
         })
     }
@@ -60,7 +65,7 @@ impl Bot {
                 info!("Bot received message, {:?}", control_msg);
                 if let Some(msg) = control_msg {
                     match msg {
-                        
+
                         // SignalingMessage::Offer { room_id, from, to, sdp } => {
 
                         // }
@@ -80,8 +85,6 @@ impl Bot {
 
         }
     }
-
-
 }
 
 impl WebRTCHandler for Bot {

@@ -1,14 +1,12 @@
+use super::*;
 use crate::{bot::bot::Bot, config::CONFIG, msg_center::signaling_msgs::SignalingMessage};
+use anyhow::Result;
+use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex, RwLock};
-use anyhow::Result;
-use super::*;
-use once_cell::sync::Lazy;
 
 const DEFAULT_CHANNEL_SIZE: usize = 100;
-
-
 
 // 消息路由表,管理所有的发送端
 #[derive(Default)]
@@ -28,7 +26,14 @@ impl MessageRouter {
 
         let (message_tx, message_rx) = mpsc::channel(DEFAULT_CHANNEL_SIZE);
 
-        let mut bot = Bot::new(CONFIG.read().await.clone(),id.clone(),sender.clone(),message_rx).await.unwrap();
+        let mut bot = Bot::new(
+            CONFIG.read().await.clone(),
+            id.clone(),
+            sender.clone(),
+            message_rx,
+        )
+        .await
+        .unwrap();
         bot.setup_audio_processor().await;
 
         self.bots_senders.insert(id.clone(), message_tx);
@@ -64,8 +69,11 @@ impl MessageBus {
     }
 
     // 注册一个新的消息通道
-    pub async fn register(&self, id: String){
-        self.router.write().await.add_route(&id, self.back2ws_sender.clone());
+    pub async fn register(&self, id: String) {
+        self.router
+            .write()
+            .await
+            .add_route(&id, self.back2ws_sender.clone());
     }
 
     // 注销消息通道
@@ -76,7 +84,9 @@ impl MessageBus {
     // 发送消息到指定目标
     pub async fn send_from(&self, from: &str, message: SignalingMessage) -> Result<()> {
         if let Some(sender) = self.router.read().await.get_sender(from) {
-            sender.send(message).await
+            sender
+                .send(message)
+                .await
                 .map_err(|e| anyhow::anyhow!("Failed to send message: {}", e))?;
         } else {
             warn!("No route found for target: {}", from);
@@ -84,20 +94,32 @@ impl MessageBus {
         Ok(())
     }
 
-    pub async fn run(mut msg_recv: mpsc::Receiver<SignalingMessage>){
-        let mut bus  = Self::new(mpsc::channel(DEFAULT_CHANNEL_SIZE).0);
+    pub async fn run(mut msg_recv: mpsc::Receiver<SignalingMessage>) {
+        let mut bus = Self::new(mpsc::channel(DEFAULT_CHANNEL_SIZE).0);
         while let Some(message) = msg_recv.recv().await {
             match message {
                 SignalingMessage::Call { ref from, .. } => {
                     bus.register(from.clone()).await;
                 }
-                SignalingMessage::Offer { ref from, ref to, ref sdp } => {
+                SignalingMessage::Offer {
+                    ref from,
+                    ref to,
+                    ref sdp,
+                } => {
                     bus.send_from(&from, message.clone()).await;
                 }
-                SignalingMessage::IceCandidate { ref from, ref to, ref candidate } => {
+                SignalingMessage::IceCandidate {
+                    ref from,
+                    ref to,
+                    ref candidate,
+                } => {
                     bus.send_from(&from, message.clone()).await;
                 }
-                SignalingMessage::Answer { ref from, ref to, ref sdp } => {
+                SignalingMessage::Answer {
+                    ref from,
+                    ref to,
+                    ref sdp,
+                } => {
                     bus.send_from(&from, message.clone()).await;
                 }
                 _ => {
@@ -108,7 +130,6 @@ impl MessageBus {
     }
 }
 
-
 // pub struct MessageHandler {
 //     bus: MessageBus,
 //     component_id: String,
@@ -118,8 +139,8 @@ impl MessageBus {
 // impl MessageHandler {
 //     pub async fn new(bus: MessageBus, component_id: String) -> Self {
 //         let receiver = Some(bus.register(component_id.clone()).await);
-//         Self { 
-//             bus, 
+//         Self {
+//             bus,
 //             component_id,
 //             receiver,
 //         }
@@ -130,7 +151,7 @@ impl MessageBus {
 //     }
 
 //     pub async fn send_to(&self, target: &str, message: SignalingMessage) -> Result<()> {
-//         debug!("Component {} sending message to {}: {:?}", 
+//         debug!("Component {} sending message to {}: {:?}",
 //             self.component_id, target, message);
 //         self.bus.send_from(target, message).await
 //     }

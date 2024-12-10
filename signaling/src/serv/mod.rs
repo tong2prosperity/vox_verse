@@ -1,9 +1,9 @@
-pub mod mngr;
-pub mod rtc_server;
-pub mod events;
-pub mod msg_pass;
-pub mod structs;
 pub mod call_handler;
+pub mod events;
+pub mod mngr;
+pub mod msg_pass;
+pub mod rtc_server;
+pub mod structs;
 
 use events::*;
 
@@ -27,5 +27,3 @@ use log::{debug, error, info, warn};
 
 use lazy_static::lazy_static;
 use tokio::sync::Mutex;
-
-

@@ -18,7 +18,7 @@ impl AudioCapability for VadProcessor {
     }
 }
 
-// ASR能力 
+// ASR能力
 pub struct AsrProcessor {
     // ASR相关配置
 }

@@ -1,5 +1,5 @@
-use slog::{o, Drain, Logger};
 use once_cell::sync::Lazy;
+use slog::{o, Drain, Logger};
 
 use std::sync::Mutex;
 
@@ -9,7 +9,6 @@ pub static GLOBAL_LOGGER: Lazy<Logger> = Lazy::new(|| {
     let drain = Mutex::new(drain).fuse();
     Logger::root(drain, o!())
 });
-
 
 // 定义自己的宏
 #[macro_export]
