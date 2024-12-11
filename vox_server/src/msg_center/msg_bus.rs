@@ -98,14 +98,12 @@ impl MessageBus {
         let mut bus = Self::new(mpsc::channel(DEFAULT_CHANNEL_SIZE).0);
         while let Some(message) = msg_recv.recv().await {
             match message {
-                SignalingMessage::Call { ref from, .. } => {
-                    bus.register(from.clone()).await;
-                }
                 SignalingMessage::Offer {
                     ref from,
                     ref to,
                     ref sdp,
                 } => {
+                    bus.register(from.clone()).await;
                     bus.send_from(&from, message.clone()).await;
                 }
                 SignalingMessage::IceCandidate {

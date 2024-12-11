@@ -64,11 +64,36 @@ async fn handle_client_ws(socket: WebSocket, state: Arc<AppState>) {
         warn!("Failed to receive message from client");
         return;
     };
-    let cli_id = if let Ok(client_msg) = serde_json::from_str::<ClientMsg>(&msg) {
-        match client_msg.msg_type {
-            ClientMsgType::Connect => {
-                info!("New client registered with ID: {}", client_msg.payload);
-                client_msg.payload
+    let (cli_id, server_id) = if let Ok(client_msg) = serde_json::from_str::<SignalingMessage>(&msg) {
+        match client_msg {
+            SignalingMessage::ClientConnect { client_id } => {
+                info!("New client registered with ID: {}", &client_id);
+                let mut server_mngr = SERVER_MNGR.lock().await;
+                server_mngr.register_client(&client_id, msg_tx.clone()).await;
+                if let Some(server_id) = server_mngr.assign_server_to_client(&client_id).await {
+                    debug!(
+                        "Found available server {} for client {}",
+                        server_id, client_id
+                    );
+                    
+                        info!(
+                            "Successfully assigned server {} to client {}",
+                            server_id, client_id
+                        );
+                        let response = ClientResponse {
+                            msg_type: "server_assigned".to_string(),
+                            client_id: client_id.clone(),
+                            server_id: Some(server_id.clone()),
+                            error: None,
+                        };
+                        debug!("Sending server assignment response: {:?}", response);
+                        let _ =
+                            msg_tx.send(serde_json::to_string(&response).unwrap()).await;
+                    (client_id.clone(), server_id.clone())
+                } else {
+                    warn!("No available server found for client {}", client_id);
+                    return ;
+                }
             }
             _ => {
                 warn!("Invalid message type from client");
@@ -79,21 +104,9 @@ async fn handle_client_ws(socket: WebSocket, state: Arc<AppState>) {
         warn!("Failed to parse message from client");
         return;
     };
-    // Send client ID back to the client
-    // let connect_response = ClientResponse {
-    //     msg_type: "connected".to_string(),
-    //     client_id: client_id.clone(),
-    //     server_id: None,
-    //     error: None,
-    // };
-    //debug!("Sending connection response to client: {:?}", connect_response);
-    // if let Err(e) = sender.send(Message::Text(serde_json::to_string(&connect_response).unwrap())).await {
-    //     error!("Failed to send client ID: {}", e);
-    //     return;
-    // }
-
-    // Spawn task to receive messages from the WebSocket
     
+
+
     let cli_id_copy = cli_id.clone();
 
     let mut receive_task = tokio::spawn(async move {
@@ -104,42 +117,12 @@ async fn handle_client_ws(socket: WebSocket, state: Arc<AppState>) {
                 let mut server_mngr = SERVER_MNGR.lock().await;
 
                 match msg {
-                    SignalingMessage::Call { from } => {
-                        let client_id = from.clone();
-                        info!("Client {} requesting server connection", client_id);
-
-                        _ = server_mngr.register_client(&client_id, msg_tx.clone()).await;
-                        if let Some(server_id) = server_mngr.assign_server_to_client(&client_id).await {
-                            debug!(
-                                "Found available server {} for client {}",
-                                server_id, client_id
-                            );
-                            {
-                                info!(
-                                    "Successfully assigned server {} to client {}",
-                                    server_id, client_id
-                                );
-                                let response = ClientResponse {
-                                    msg_type: "server_assigned".to_string(),
-                                    client_id: client_id.clone(),
-                                    server_id: Some(server_id.clone()),
-                                    error: None,
-                                };
-                                debug!("Sending server assignment response: {:?}", response);
-                                let _ =
-                                    msg_tx.send(serde_json::to_string(&response).unwrap()).await;
-                            }
-                        } else {
-                            warn!("No available server found for client {}", client_id);
-                        }
-                    }
-
                     _ => {
                         let to_pass = text.clone();
                         info!("passing through the message from client {:?}", to_pass);
                         let msg = serde_json::from_str::<SignalingMessage>(&to_pass).unwrap();
                         server_mngr.forward_to_server_by_client(&cli_id.clone(), msg).await;
-                        let _ = msg_tx.send(to_pass).await;
+                        //let _ = msg_tx.send(to_pass).await;
                     }
                 }
             } else {

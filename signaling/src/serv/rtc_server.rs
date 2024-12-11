@@ -41,17 +41,6 @@ impl RtcServer {
                             if let Ok(msg) = serde_json::from_str::<RawMessage>(&text) {
                                 info!("recv raw msg: {}", text);
                                 match msg.event {
-                                    ServerEvent::Answer => {
-                                        // 转发 answer 给对应的客户端
-                                        if let Ok(payload) = serde_json::from_str::<serde_json::Value>(&msg.payload) {
-                                            if let Some(user_id) = payload.get("user_id").and_then(|v| v.as_str()) {
-                                                let mut server_mngr = SERVER_MNGR.lock().await;
-                                                if let Some(client_tx) = server_mngr.get_client_tx(user_id).await {
-                                                    let _ = client_tx.send(text).await;
-                                                }
-                                            }
-                                        }
-                                    },
                                     _ => debug!("recv msg: {}", text),
                                 }
                             }
@@ -101,6 +90,7 @@ impl RtcServer {
 
         // Remove the server from the global manager
         let mut server_mngr = SERVER_MNGR.lock().await;
-        server_mngr.remove_rtc_server(&self.server_id);
+        server_mngr.remove_server(&self.server_id);
     }
 }
+

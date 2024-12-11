@@ -49,7 +49,7 @@ async fn main() {
         .route("/call", post(serv::msg_pass::caller_handler))
         .with_state(app_state);
 
-    info!("Starting server on port 8080");
+    info!("Starting server on port 9527");
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 9527));
     info!("Listening on {}", addr);

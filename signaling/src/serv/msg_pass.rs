@@ -1,5 +1,6 @@
 use mngr::SERVER_MNGR;
 use structs::{CallRequest, SignalingMessage};
+use tokio::sync::mpsc;
 
 use super::*;
 
@@ -9,38 +10,23 @@ pub async fn caller_handler(
 ) -> impl IntoResponse {
     let mut server_mngr = SERVER_MNGR.lock().await;
 
-    let room_id = xid::new().to_string();
+    let client_id = xid::new().to_string();
 
-    match server_mngr.user_calling(room_id.clone()).await {
+    let (client_tx, client_rx) = mpsc::channel(100);
+
+    server_mngr.register_client(&client_id, client_tx.clone()).await;
+
+    match server_mngr.assign_server_to_client(&client_id).await {
         Some(server_id) => {
             // 通知选中的RTC服务器
-            if let Some(server) = server_mngr.get_server(&server_id) {
-                let msg = SignalingMessage::Call {
-                    from: call_req.user_id,
-                };
-
-                match server.sig_tx.send(msg).await {
-                    Ok(_) => Json(RoomAssignResponse {
-                        success: true,
-                        server_id: Some(server_id),
-                        error: None,
-                    }),
-                    Err(e) => {
-                        error!("send msg to rtc server error: {}", e);
-                        Json(RoomAssignResponse {
-                            success: false,
-                            server_id: None,
-                            error: Some(e.to_string()),
-                        })
-                    }
-                }
-            } else {
-                Json(RoomAssignResponse {
-                    success: false,
-                    server_id: None,
-                    error: Some("Server not found".to_string()),
-                })
-            }
+            server_mngr.forward_to_server(&server_id, SignalingMessage::Call {
+                from: client_id,
+            }).await;
+            Json(RoomAssignResponse {
+                success: true,
+                server_id: Some(server_id),
+                error: None,
+            })
         }
         None => Json(RoomAssignResponse {
             success: false,
