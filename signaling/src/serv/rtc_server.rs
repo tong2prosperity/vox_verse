@@ -46,10 +46,13 @@ impl RtcServer {
                             }
                         },
                         Some(Err(_)) | None => {
+                            debug!("server disconnected");
                             self.cleanup().await;
                             return;
                         }
-                        _ => {}
+                        _ => {
+                            debug!("recv msg: {:?}", msg);
+                        }
                     }
                 }
                 inner_msg = self.sig_rx.recv() => {
@@ -90,7 +93,7 @@ impl RtcServer {
 
         // Remove the server from the global manager
         let mut server_mngr = SERVER_MNGR.lock().await;
-        server_mngr.remove_server(&self.server_id);
+        server_mngr.remove_server(&self.server_id).await;
     }
 }
 

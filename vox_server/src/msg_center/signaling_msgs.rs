@@ -5,6 +5,9 @@ use std::fmt::Debug;
 #[serde(tag = "type", content = "payload")]
 pub enum SignalingMessage {
     // 连接管理
+    ClientConnect {
+        client_id: String,
+    },
     Call {
         from: String,
     },

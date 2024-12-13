@@ -128,13 +128,19 @@ impl ServerMngr {
 
     // 移除服务器
     pub async fn remove_server(&mut self, server_id: &str) {
+        let mut client_id_to_remove = None;
         if let Some(server) = self.server_nodes.remove(server_id) {
             // 清理该服务器关联的所有客户端
             for client_id in server.client_ids {
                 if let Some(client) = self.client_info.get_mut(&client_id) {
                     client.server_id = None;
+                    client_id_to_remove = Some(client_id.clone());
                 }
             }
+        }
+        if let Some(client_id) = client_id_to_remove {
+            debug!("remove client: {}", client_id);
+            self.remove_client(&client_id).await;
         }
     }
 }

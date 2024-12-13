@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 pub struct Bot {
-    bot_id: String,
+    pub bot_id: String,
     rtc: RTCClient,
     cfg: AppConfig,
     audio_processor: Option<AudioBizProcessor>,
@@ -59,7 +59,11 @@ impl Bot {
         self.processor_handle = Some(processor_handle);
     }
 
-    pub async fn handle_message(&mut self) {
+    
+
+    pub async fn handle_message(mut self) {
+
+        
         tokio::select! {
             control_msg = self.message_rx.recv() => {
                 info!("Bot received message, {:?}", control_msg);
