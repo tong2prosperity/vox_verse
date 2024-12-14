@@ -74,12 +74,12 @@ impl BotManager {
 
     pub async fn create_bot(
         &mut self,
-        id: String,
+        client_id: String,
         sender: mpsc::Sender<SignalingMessage>,
     ) -> Result<mpsc::Sender<SignalingMessage>> {
         let (message_tx, message_rx) = mpsc::channel(DEFAULT_CHANNEL_SIZE);
 
-        let mut bot = Bot::new(CONFIG.read().await.clone(), id.clone(), sender, message_rx).await?;
+        let mut bot = Bot::new(CONFIG.read().await.clone(), client_id.clone(), sender, message_rx).await?;
 
         bot.setup_audio_processor().await;
 
@@ -88,7 +88,7 @@ impl BotManager {
             bot.handle_message().await;
         });
 
-        self.bots.insert(id, message_tx.clone());
+        self.bots.insert(client_id, message_tx.clone());
 
         Ok(message_tx)
     }
