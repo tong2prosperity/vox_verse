@@ -1,5 +1,8 @@
 use super::*;
-use crate::{bot::bot::Bot, config::CONFIG, msg_center::signaling_msgs::SignalingMessage, server::rtc::traits::WebRTCHandler};
+use crate::{
+    bot::bot::Bot, config::CONFIG, msg_center::signaling_msgs::SignalingMessage,
+    server::rtc::traits::WebRTCHandler,
+};
 use anyhow::Result;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -37,13 +40,16 @@ impl MessageRouter {
         .unwrap();
 
         bot.setup_audio_processor().await;
+        tokio::spawn(async move {
+            bot.handle_message().await;
+        });
         self.bots_senders.insert(id.clone(), message_tx);
-       // self.bots.insert(id.clone(), bot);
+        // self.bots.insert(id.clone(), bot);
     }
 
     fn remove_route(&mut self, id: &str) {
         self.bots_senders.remove(id);
-       // self.bots.remove(id);
+        // self.bots.remove(id);
     }
 
     fn get_sender(&self, id: &str) -> Option<mpsc::Sender<SignalingMessage>> {
@@ -66,16 +72,15 @@ impl BotManager {
         }
     }
 
-    pub async fn create_bot(&mut self, id: String, sender: mpsc::Sender<SignalingMessage>) -> Result<mpsc::Sender<SignalingMessage>> {
+    pub async fn create_bot(
+        &mut self,
+        id: String,
+        sender: mpsc::Sender<SignalingMessage>,
+    ) -> Result<mpsc::Sender<SignalingMessage>> {
         let (message_tx, message_rx) = mpsc::channel(DEFAULT_CHANNEL_SIZE);
-        
-        let mut bot = Bot::new(
-            CONFIG.read().await.clone(),
-            id.clone(),
-            sender,
-            message_rx,
-        ).await?;
-        
+
+        let mut bot = Bot::new(CONFIG.read().await.clone(), id.clone(), sender, message_rx).await?;
+
         bot.setup_audio_processor().await;
 
         tokio::spawn(async move {
@@ -84,17 +89,14 @@ impl BotManager {
         });
 
         self.bots.insert(id, message_tx.clone());
-        
+
         Ok(message_tx)
     }
-    
+
     pub fn remove_bot(&mut self, id: &str) {
         self.bots.remove(id);
     }
 }
-
-
-
 
 #[derive(Clone)]
 pub struct MessageBus {
@@ -119,16 +121,18 @@ impl MessageBus {
         }
 
         let ws_sender = self.back2ws_sender.clone();
-        
+
         // 先创建Bot
-        let message_tx = self.bot_manager.write().await
+        let message_tx = self
+            .bot_manager
+            .write()
+            .await
             .create_bot(id.clone(), ws_sender)
             .await
             .expect("Failed to create bot");
-            
+
         // 然后添加路由
-        self.router.write().await
-            .add_route(&id, message_tx).await;
+        self.router.write().await.add_route(&id, message_tx).await;
 
         // let message_tx = self.bot_manager.write().await.create_bot(id, self.back2ws_sender.clone()).await?;
         // self.router
@@ -156,8 +160,60 @@ impl MessageBus {
         Ok(())
     }
 
-    pub async fn run(mut msg_recv: mpsc::Receiver<SignalingMessage>) {
-        let mut bus = Self::new(mpsc::channel(DEFAULT_CHANNEL_SIZE).0);
+    pub async fn run(mut msg_recv: mpsc::Receiver<SignalingMessage>, ws_tx: mpsc::Sender<SignalingMessage>) {
+        let mut bus = Self::new(ws_tx);
+        // loop {
+        //     tokio::select! {
+        //         message = msg_recv.recv() => {
+        //             if let Some(message) = message {
+        //           match message {
+        //             SignalingMessage::ClientConnect { client_id } => {
+        //                 debug!("recv client connect message: {}", client_id);
+        //                 bus.register(client_id.clone()).await;
+        //             }
+        //             SignalingMessage::Offer {
+        //                 ref from,
+        //                 ref to,
+        //                 ref sdp,
+        //             } => {
+        //                 debug!("send offer message to bot: {}", from);
+        //                 match bus.send_from(&from, message.clone()).await {
+        //                     Ok(_) => debug!("send offer message to bot: {} success", from),
+        //                     Err(e) => error!("send offer message to bot: {} failed, {}", from, e),
+        //                 }
+        //             }
+        //             SignalingMessage::IceCandidate {
+        //                 ref from,
+        //                 ref to,
+        //                 ref candidate,
+        //             } => {
+        //                 debug!("send ice candidate message to bot: {}", from);
+        //                 match bus.send_from(&from, message.clone()).await {
+        //                     Ok(_) => debug!("send ice candidate message to bot: {} success", from),
+        //                     Err(e) => error!("send ice candidate message to bot: {} failed, {}", from, e),
+        //                 }
+        //             }
+        //             SignalingMessage::Answer {
+        //                 ref from,
+        //                 ref to,
+        //                 ref sdp,
+        //             } => {
+        //                 debug!("send answer message to bot: {}", from);
+        //                 match bus.send_from(&from, message.clone()).await {
+        //                     Ok(_) => debug!("send answer message to bot: {} success", from),
+        //                     Err(e) => error!("send answer message to bot: {} failed, {}", from, e),
+        //                 }
+        //             }
+        //             _ => {
+        //                 error!("Unknown message: {:?}", message);
+        //             }
+        //         }
+        //           }
+        //         }
+        //         _ = ws_rx.recv() => {}
+        //     }
+        // }
+
         while let Some(message) = msg_recv.recv().await {
             match message {
                 SignalingMessage::ClientConnect { client_id } => {
@@ -183,7 +239,9 @@ impl MessageBus {
                     debug!("send ice candidate message to bot: {}", from);
                     match bus.send_from(&from, message.clone()).await {
                         Ok(_) => debug!("send ice candidate message to bot: {} success", from),
-                        Err(e) => error!("send ice candidate message to bot: {} failed, {}", from, e),
+                        Err(e) => {
+                            error!("send ice candidate message to bot: {} failed, {}", from, e)
+                        }
                     }
                 }
                 SignalingMessage::Answer {

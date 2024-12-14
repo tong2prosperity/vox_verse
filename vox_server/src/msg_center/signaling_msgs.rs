@@ -8,6 +8,17 @@ pub enum SignalingMessage {
     ClientConnect {
         client_id: String,
     },
+    ClientDisconnect {
+        client_id: String,
+    },
+    BotConnected {
+        client_id: String,
+        bot_id: String,
+    },
+    BotDisconnected {
+        client_id: String,
+        bot_id: String,
+    },
     Call {
         from: String,
     },

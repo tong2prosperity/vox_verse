@@ -26,7 +26,7 @@ impl Bot {
         client_id: String,
         ws_tx: mpsc::Sender<SignalingMessage>,
         message_rx: mpsc::Receiver<SignalingMessage>,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self> {
         let bot_id = format!("bot_{}", xid::new().to_string());
         let rtc = RTCClient::new(client_id.clone(), bot_id.clone(), ws_tx.clone()).await?;
         Ok(Self {
@@ -63,6 +63,9 @@ impl Bot {
 
     pub async fn handle_message(mut self) {
 
+        // 通过ws_tx发送BotConnected消息
+        self.ws_tx.send(SignalingMessage::BotConnected { client_id: self.bot_id.clone(), bot_id: self.bot_id.clone() }).await.unwrap();
+
         
         tokio::select! {
             control_msg = self.message_rx.recv() => {
@@ -70,9 +73,16 @@ impl Bot {
                 if let Some(msg) = control_msg {
                     match msg {
 
-                        // SignalingMessage::Offer { room_id, from, to, sdp } => {
-
-                        // }
+                        SignalingMessage::Offer {from, to, sdp } => {
+                            match self.rtc.handle_offer(sdp, self.audio_tx.unwrap().clone()).await {
+                                Ok(answer_sdp) => {
+                                    self.ws_tx.send(SignalingMessage::Answer {from:to, to:from, sdp: answer_sdp}).await.unwrap();
+                                }
+                                Err(e) => {
+                                    error!("Failed to handle offer: {:?}", e);
+                                }
+                            }
+                        }
                         // SignalingMessage::Answer { room_id, from, to, sdp } => todo!(),
                         SignalingMessage::IceCandidate {from, to, candidate } => {
                             self.rtc.add_ice_candidate(candidate).await.unwrap();
