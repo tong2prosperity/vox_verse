@@ -116,29 +116,35 @@ impl MessageBus {
 
     // 注册一个新的消息通道
     pub async fn register(&self, id: String) {
+        info!("Attempting to register client with ID: {}", id);
         if self.router.read().await.get_sender(&id).is_some() {
+            warn!("Client {} already registered, skipping registration", id);
             return;
         }
 
         let ws_sender = self.back2ws_sender.clone();
-
-        // 先创建Bot
-        let message_tx = self
+        debug!("Creating bot for client: {}", id);
+        
+        let message_tx = match self
             .bot_manager
             .write()
             .await
             .create_bot(id.clone(), ws_sender)
             .await
-            .expect("Failed to create bot");
+        {
+            Ok(tx) => {
+                info!("Successfully created bot for client: {}", id);
+                tx
+            }
+            Err(e) => {
+                error!("Failed to create bot for client {}: {}", id, e);
+                return;
+            }
+        };
 
-        // 然后添加路由
+        debug!("Adding route for client: {}", id);
         self.router.write().await.add_route(&id, message_tx).await;
-
-        // let message_tx = self.bot_manager.write().await.create_bot(id, self.back2ws_sender.clone()).await?;
-        // self.router
-        //     .write()
-        //     .await
-        //     .add_route(&id, self.back2ws_sender.clone()).await;
+        info!("Successfully registered client: {}", id);
     }
 
     // 注销消息通道
@@ -148,76 +154,32 @@ impl MessageBus {
 
     // 发送消息到指定目标
     pub async fn send_from(&self, from: &str, message: SignalingMessage) -> Result<()> {
+        debug!("Attempting to send message from {}: {:?}", from, message);
         if let Some(sender) = self.router.read().await.get_sender(from) {
-            debug!("send message to bot: {}", from);
+            info!("Found sender for {}, sending message", from);
             sender
                 .send(message)
                 .await
-                .map_err(|e| anyhow::anyhow!("Failed to send message: {}", e))?;
+                .map_err(|e| {
+                    error!("Failed to send message from {}: {}", from, e);
+                    anyhow::anyhow!("Failed to send message: {}", e)
+                })?;
+            debug!("Successfully sent message from {}", from);
         } else {
-            warn!("No route found for target: {}", from);
+            warn!("No route found for sender: {}", from);
         }
         Ok(())
     }
 
     pub async fn run(mut msg_recv: mpsc::Receiver<SignalingMessage>, ws_tx: mpsc::Sender<SignalingMessage>) {
+        info!("Starting MessageBus...");
         let mut bus = Self::new(ws_tx);
-        // loop {
-        //     tokio::select! {
-        //         message = msg_recv.recv() => {
-        //             if let Some(message) = message {
-        //           match message {
-        //             SignalingMessage::ClientConnect { client_id } => {
-        //                 debug!("recv client connect message: {}", client_id);
-        //                 bus.register(client_id.clone()).await;
-        //             }
-        //             SignalingMessage::Offer {
-        //                 ref from,
-        //                 ref to,
-        //                 ref sdp,
-        //             } => {
-        //                 debug!("send offer message to bot: {}", from);
-        //                 match bus.send_from(&from, message.clone()).await {
-        //                     Ok(_) => debug!("send offer message to bot: {} success", from),
-        //                     Err(e) => error!("send offer message to bot: {} failed, {}", from, e),
-        //                 }
-        //             }
-        //             SignalingMessage::IceCandidate {
-        //                 ref from,
-        //                 ref to,
-        //                 ref candidate,
-        //             } => {
-        //                 debug!("send ice candidate message to bot: {}", from);
-        //                 match bus.send_from(&from, message.clone()).await {
-        //                     Ok(_) => debug!("send ice candidate message to bot: {} success", from),
-        //                     Err(e) => error!("send ice candidate message to bot: {} failed, {}", from, e),
-        //                 }
-        //             }
-        //             SignalingMessage::Answer {
-        //                 ref from,
-        //                 ref to,
-        //                 ref sdp,
-        //             } => {
-        //                 debug!("send answer message to bot: {}", from);
-        //                 match bus.send_from(&from, message.clone()).await {
-        //                     Ok(_) => debug!("send answer message to bot: {} success", from),
-        //                     Err(e) => error!("send answer message to bot: {} failed, {}", from, e),
-        //                 }
-        //             }
-        //             _ => {
-        //                 error!("Unknown message: {:?}", message);
-        //             }
-        //         }
-        //           }
-        //         }
-        //         _ = ws_rx.recv() => {}
-        //     }
-        // }
 
         while let Some(message) = msg_recv.recv().await {
+            debug!("MessageBus received message: {:?}", message);
             match message {
                 SignalingMessage::ClientConnect { client_id } => {
-                    debug!("recv client connect message: {}", client_id);
+                    info!("Received client connect message for client: {}", client_id);
                     bus.register(client_id.clone()).await;
                 }
                 SignalingMessage::Offer {
@@ -225,10 +187,10 @@ impl MessageBus {
                     ref to,
                     ref sdp,
                 } => {
-                    debug!("send offer message to bot: {}", from);
+                    info!("Received offer message from: {} to: {}", from, to);
                     match bus.send_from(&from, message.clone()).await {
-                        Ok(_) => debug!("send offer message to bot: {} success", from),
-                        Err(e) => error!("send offer message to bot: {} failed, {}", from, e),
+                        Ok(_) => info!("Successfully sent offer message to bot: {}", from),
+                        Err(e) => error!("Failed to send offer message to bot: {}, error: {}", from, e),
                     }
                 }
                 SignalingMessage::IceCandidate {
@@ -236,12 +198,10 @@ impl MessageBus {
                     ref to,
                     ref candidate,
                 } => {
-                    debug!("send ice candidate message to bot: {}", from);
+                    info!("Received ICE candidate from: {} to: {}", from, to);
                     match bus.send_from(&from, message.clone()).await {
-                        Ok(_) => debug!("send ice candidate message to bot: {} success", from),
-                        Err(e) => {
-                            error!("send ice candidate message to bot: {} failed, {}", from, e)
-                        }
+                        Ok(_) => info!("Successfully sent ICE candidate to bot: {}", from),
+                        Err(e) => error!("Failed to send ICE candidate to bot: {}, error: {}", from, e),
                     }
                 }
                 SignalingMessage::Answer {
@@ -249,17 +209,18 @@ impl MessageBus {
                     ref to,
                     ref sdp,
                 } => {
-                    debug!("send answer message to bot: {}", from);
+                    info!("Received answer message from: {} to: {}", from, to);
                     match bus.send_from(&from, message.clone()).await {
-                        Ok(_) => debug!("send answer message to bot: {} success", from),
-                        Err(e) => error!("send answer message to bot: {} failed, {}", from, e),
+                        Ok(_) => info!("Successfully sent answer message to bot: {}", from),
+                        Err(e) => error!("Failed to send answer message to bot: {}, error: {}", from, e),
                     }
                 }
                 _ => {
-                    error!("Unknown message: {:?}", message);
+                    warn!("Received unknown message type: {:?}", message);
                 }
             }
         }
+        info!("MessageBus stopped");
     }
 }
 
