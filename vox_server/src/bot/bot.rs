@@ -5,6 +5,7 @@ use crate::error;
 use crate::msg_center::signaling_msgs::SignalingMessage;
 use crate::server::rtc::rtc_client::RTCClient;
 use crate::server::rtc::traits::WebRTCHandler;
+use crate::server::signal_cli::SERVER_ID;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
@@ -18,6 +19,7 @@ pub struct Bot {
     ws_tx: mpsc::Sender<SignalingMessage>,
 
     processor_handle: Option<JoinHandle<()>>,
+    client_id: String,
 }
 
 impl Bot {
@@ -39,6 +41,7 @@ impl Bot {
             ws_tx: ws_tx.clone(),
 
             processor_handle: None,
+            client_id,
         })
     }
 
@@ -64,7 +67,7 @@ impl Bot {
     pub async fn handle_message(mut self) {
 
         // 通过ws_tx发送BotConnected消息
-        self.ws_tx.send(SignalingMessage::BotConnected { client_id: self.bot_id.clone(), bot_id: self.bot_id.clone() }).await.unwrap();
+        //self.ws_tx.send(SignalingMessage::ClientConnected { client_id: self.client_id.clone(), server_id: SERVER_ID.clone() }).await.unwrap();
 
         
         tokio::select! {
@@ -87,12 +90,9 @@ impl Bot {
                         SignalingMessage::IceCandidate {from, to, candidate } => {
                             self.rtc.add_ice_candidate(candidate).await.unwrap();
                         }
-                        SignalingMessage::RoomCreated { room_id } => todo!(),
-                        SignalingMessage::UserJoined { room_id, user_id } => todo!(),
-                        SignalingMessage::UserLeft { room_id, user_id } => todo!(),
-                        SignalingMessage::AudioData { room_id, user_id, data } => todo!(),
-                        SignalingMessage::AudioProcessingResult { room_id, user_id, result } => todo!(),
-                        _ => todo!(),
+                        _ => {
+                            error!("Bot received unknown message: {:?}", msg);
+                        }
                     }
                 }
             }

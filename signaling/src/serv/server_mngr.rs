@@ -4,7 +4,7 @@ use tokio::sync::{mpsc, Mutex};
 use xid;
 
 use super::*;
-use crate::serv::structs::SignalingMessage;
+use crate::serv::msgs::SignalingMessage;
 
 lazy_static! {
     pub static ref SERVER_MNGR: Mutex<ServerMngr> = Mutex::new(ServerMngr::new());
@@ -158,44 +158,59 @@ pub async fn server_mngr(mut socket: WebSocket, state: Arc<AppState>) {
     let mut rtc_server = None;
 
     let (sig_tx, sig_rx) = mpsc::channel::<SignalingMessage>(100);
-    while let Some(Ok(Message::Text(text))) = socket.recv().await {
-        // 解析注册消息
-        match serde_json::from_str::<SignalingMessage>(&text) {
-            Ok(server_msg) => {
-                debug!("Server mngr received message: {:?}", server_msg);
-                match server_msg {
-                    SignalingMessage::ServerAssigned { server_id } => {
-                        rtc_server = Some(RtcServer::new(server_id, socket, sig_rx));
-                        break;
-                    }
-                    _ => break,
-                }
+    if let Some(msg) = assert_msg::<SignalingMessage>(&mut socket, "ServerRegistered").await {
+        match msg {
+            SignalingMessage::ServerRegister { server_id } => {
+                rtc_server = Some(RtcServer::new(server_id, socket, sig_rx));
             }
-            Err(e) => {
-                error!("Server mngr received invalid message: {:?}", e);
+            _ => {
+                error!("Unexpected message type, expected ServerRegistered");
+                return;
             }
         }
+    } else {
+        error!("Failed to receive ServerRegistered message");
+        return;
     }
 
     if let Some(rtc_server) = rtc_server {
         let server_id = rtc_server.server_id.clone();
         {
             let mut server_mngr = SERVER_MNGR.lock().await;
-            server_mngr.server_nodes.insert(
-                rtc_server.server_id.clone(),
-                ServerNode {
-                    sig_tx,
-                    connected_users: 0,
-                    client_ids: Vec::new(),
-                },
-            );
+            server_mngr
+                .register_server(rtc_server.server_id.clone(), sig_tx)
+                .await;
         }
 
         debug!("Server mngr registered server: {:?}", &server_id);
         rtc_server.process().await;
         debug!("one rtc server process exited, server_id: {:?}", server_id);
-    };
 
-    // 等待接收任务完成
+        {
+            let mut server_mngr = SERVER_MNGR.lock().await;
+            server_mngr.remove_server(&server_id).await;
+        }
+        debug!("Server cleaned up: {:?}", server_id);
+    }
 }
 
+async fn assert_msg<T>(socket: &mut WebSocket, expected_type: &str) -> Option<T> 
+where 
+    T: serde::de::DeserializeOwned,
+{
+    if let Some(Ok(Message::Text(text))) = socket.recv().await {
+        match serde_json::from_str::<T>(&text) {
+            Ok(msg) => {
+                debug!("Received expected {} message", expected_type);
+                Some(msg)
+            }
+            Err(e) => {
+                error!("Failed to parse {} message: {}", expected_type, e);
+                None
+            }
+        }
+    } else {
+        error!("Failed to receive {} message", expected_type);
+        None
+    }
+}

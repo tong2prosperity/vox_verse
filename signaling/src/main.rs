@@ -21,7 +21,7 @@ use futures::{sink::SinkExt, stream::StreamExt};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::broadcast;
 
-use crate::serv::{call_handler::client_call_handler, mngr::server_mngr_handler};
+use crate::serv::{client_handler::client_call_handler, server_mngr::server_mngr_handler};
 
 #[tokio::main]
 async fn main() {
@@ -45,7 +45,7 @@ async fn main() {
     let app = Router::new()
         .route("/ws/client", get(client_call_handler)) // Client WebSocket endpoint
         .route("/ws/server", get(server_mngr_handler)) // Server WebSocket endpoint
-        .route("/server_mngr", get(serv::mngr::server_mngr_handler))
+        .route("/server_mngr", get(serv::server_mngr::server_mngr_handler))
         .route("/call", post(serv::msg_pass::caller_handler))
         .with_state(app_state);
 

@@ -20,11 +20,11 @@ struct MessageRouter {
 }
 
 impl MessageRouter {
-    pub async fn add_route(&mut self, id: &String, sender: mpsc::Sender<SignalingMessage>) {
-        debug!("add route for bot: {}", id);
+    pub async fn add_route(&mut self, client_id: &String, sender: mpsc::Sender<SignalingMessage>) {
+        debug!("add route for bot: {}", client_id);
         // 检查当前是否存在sender
-        if self.bots_senders.contains_key(id) {
-            error!("correlated bot already exists for user id: {}", id);
+        if self.bots_senders.contains_key(client_id) {
+            error!("correlated bot already exists for user id: {}", client_id);
             return;
         }
 
@@ -32,7 +32,7 @@ impl MessageRouter {
 
         let mut bot = Bot::new(
             CONFIG.read().await.clone(),
-            id.clone(),
+            client_id.clone(),
             sender.clone(),
             message_rx,
         )
@@ -43,7 +43,7 @@ impl MessageRouter {
         tokio::spawn(async move {
             bot.handle_message().await;
         });
-        self.bots_senders.insert(id.clone(), message_tx);
+        self.bots_senders.insert(client_id.clone(), message_tx);
         // self.bots.insert(id.clone(), bot);
     }
 
@@ -115,36 +115,36 @@ impl MessageBus {
     }
 
     // 注册一个新的消息通道
-    pub async fn register(&self, id: String) {
-        info!("Attempting to register client with ID: {}", id);
-        if self.router.read().await.get_sender(&id).is_some() {
-            warn!("Client {} already registered, skipping registration", id);
+    pub async fn register(&self, client_id: String) {
+        info!("Attempting to register client with ID: {}", client_id);
+        if self.router.read().await.get_sender(&client_id).is_some() {
+            warn!("Client {} already registered, skipping registration", client_id);
             return;
         }
 
         let ws_sender = self.back2ws_sender.clone();
-        debug!("Creating bot for client: {}", id);
+        debug!("Creating bot for client: {}", client_id);
         
         let message_tx = match self
             .bot_manager
             .write()
             .await
-            .create_bot(id.clone(), ws_sender)
+            .create_bot(client_id.clone(), ws_sender)
             .await
         {
             Ok(tx) => {
-                info!("Successfully created bot for client: {}", id);
+                info!("Successfully created bot for client: {}", client_id);
                 tx
             }
             Err(e) => {
-                error!("Failed to create bot for client {}: {}", id, e);
+                error!("Failed to create bot for client {}: {}", client_id, e);
                 return;
             }
         };
 
-        debug!("Adding route for client: {}", id);
-        self.router.write().await.add_route(&id, message_tx).await;
-        info!("Successfully registered client: {}", id);
+        debug!("Adding route for client: {}", client_id);
+        self.router.write().await.add_route(&client_id, message_tx).await;
+        info!("Successfully registered client: {}", client_id);
     }
 
     // 注销消息通道

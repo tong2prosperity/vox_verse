@@ -109,7 +109,7 @@ pub async fn run_signaling_client(bus_tx: mpsc::Sender<SignalingMessage>) {
     let (mut write, mut read) = ws_stream.split();
 
     // 注册为 RTC 服务器
-    let register_msg = SignalingMessage::ServerAssigned {
+    let register_msg = SignalingMessage::ServerRegister {
         server_id: SERVER_ID.to_string(),
     };
 
@@ -119,9 +119,14 @@ pub async fn run_signaling_client(bus_tx: mpsc::Sender<SignalingMessage>) {
         .expect("Failed to send register message");
 
     while let Some(msg) = read.next().await {
-        if let Ok(Message::Text(text)) = msg {
-            let msg = serde_json::from_str::<SignalingMessage>(&text).unwrap();
-            bus_tx.send(msg).await.unwrap();
+        match msg {
+            Ok(Message::Text(text)) => {
+                let msg = serde_json::from_str::<SignalingMessage>(&text).unwrap();
+                bus_tx.send(msg).await.unwrap();
+            }
+            _ => {
+                error!("recv msg: {:?}", msg);
+            }
         }
     }
 }

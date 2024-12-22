@@ -2,80 +2,26 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", content = "payload")]
+#[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 pub enum SignalingMessage {
-    // 连接管理
-    ClientConnect {
-        client_id: String,
-    },
-    ClientDisconnect {
-        client_id: String,
-    },
-    BotConnected {
-        client_id: String,
-        bot_id: String,
-    },
-    BotDisconnected {
-        client_id: String,
-        bot_id: String,
-    },
-    Call {
-        from: String,
-    },
-    ServerAssigned {
-        server_id: String,
-    },
-
+    // 服务器管理
+    ServerRegister { server_id: String },
+    ServerRegistered { server_id: String },
+    ServerDisconnect { server_id: String },
+    
+    // 客户端管理
+    ClientConnect { client_id: String },
+    ClientConnected { client_id: String, server_id: String },
+    ClientDisconnect { client_id: String },
+    
     // WebRTC 信令
-    Offer {
-        from: String,
-        to: String,
-        sdp: String,
-    },
-    Answer {
-        from: String,
-        to: String,
-        sdp: String,
-    },
-    IceCandidate {
-        //    room_id: String,
-        from: String,
-        to: String,
-        candidate: String,
-    },
-
-    // 房间事件
-    RoomCreated {
-        room_id: String,
-    },
-    UserJoined {
-        room_id: String,
-        user_id: String,
-    },
-    UserLeft {
-        room_id: String,
-        user_id: String,
-    },
-
-    // 音频处理
-    AudioData {
-        room_id: String,
-        user_id: String,
-        data: Vec<i16>,
-    },
-    AudioProcessingResult {
-        room_id: String,
-        user_id: String,
-        result: AudioProcessingResult,
-    },
+    Offer { from: String, to: String, sdp: String },
+    Answer { from: String, to: String, sdp: String },
+    IceCandidate { from: String, to: String, candidate: String },
+    
+    // 错误处理
+    Error { code: i32, message: String }
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum AudioProcessingResult {
-    VadResult(bool),
-    AsrResult(String),
-}
-
 // 用于 WebSocket 传输的消息包装
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WsMessage {
@@ -90,19 +36,12 @@ mod tests {
 
     #[test]
     fn test_signaling_message_json() {
-        let message = SignalingMessage::Call {
-            from: "client_123".to_string(),
+        let message = SignalingMessage::ClientConnect {
+            client_id: "client_123".to_string(),
         };
 
         let json = serde_json::to_string(&message).unwrap();
         println!("ClientConnect JSON: {}", json);
-
-        let message = SignalingMessage::ServerAssigned {
-            server_id: "server_456".to_string(),
-        };
-
-        let json = serde_json::to_string(&message).unwrap();
-        println!("ServerAssigned JSON: {}", json);
 
         let message = SignalingMessage::Offer {
             from: "client_123".to_string(),

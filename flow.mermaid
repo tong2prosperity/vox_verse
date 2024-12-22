@@ -1,0 +1,32 @@
+sequenceDiagram
+    participant RTC Server
+    participant Signaling Server
+    participant Client
+    
+    %% 服务器注册流程
+    RTC Server->>Signaling Server: ServerRegister {server_id}
+    Signaling Server->>RTC Server: ServerRegistered {server_id}
+    
+    %% 客户端连接流程
+    Client->>Signaling Server: ClientConnect {client_id}
+    Note over Signaling Server: 分配RTC服务器
+    Signaling Server->>Client: ClientConnected {client_id, server_id}
+    
+    %% WebRTC 建立连接流程
+    Client->>Signaling Server: Offer {from: client_id, to: server_id, sdp}
+    Signaling Server->>RTC Server: Offer {from: client_id, to: server_id, sdp}
+    RTC Server->>Signaling Server: Answer {from: server_id, to: client_id, sdp}
+    Signaling Server->>Client: Answer {from: server_id, to: client_id, sdp}
+    
+    %% ICE Candidate 交换
+    par ICE Candidate Exchange
+        Client->>Signaling Server: IceCandidate {from: client_id, to: server_id, candidate}
+        Signaling Server->>RTC Server: IceCandidate {from: client_id, to: server_id, candidate}
+    and
+        RTC Server->>Signaling Server: IceCandidate {from: server_id, to: client_id, candidate}
+        Signaling Server->>Client: IceCandidate {from: server_id, to: client_id, candidate}
+    end
+    
+    %% 断开连接流程
+    Client->>Signaling Server: ClientDisconnect {client_id}
+    Signaling Server->>RTC Server: ClientDisconnect {client_id}

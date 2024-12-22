@@ -5,10 +5,10 @@ use log::{debug, error};
 use serde::Deserialize;
 use tokio::sync::{mpsc::Receiver, Mutex};
 
-use crate::serv::{mngr::SERVER_MNGR, ServerEvent};
+use crate::serv::{server_mngr::SERVER_MNGR, ServerEvent};
 
 use super::*;
-use super::{structs::SignalingMessage, RawMessage};
+use super::{msgs::SignalingMessage, RawMessage};
 
 pub struct RtcServer {
     ws: WebSocket,
@@ -36,13 +36,6 @@ impl RtcServer {
                             if let Ok(signaling_msg) = serde_json::from_str::<SignalingMessage>(&text) {
                                 info!("recv signaling msg: {}", text);
                                 self.ws.send(Message::Text(serde_json::to_string(&signaling_msg).unwrap())).await.unwrap();
-                            }
-
-                            if let Ok(msg) = serde_json::from_str::<RawMessage>(&text) {
-                                info!("recv raw msg: {}", text);
-                                match msg.event {
-                                    _ => debug!("recv msg: {}", text),
-                                }
                             }
                         },
                         Some(Err(_)) | None => {

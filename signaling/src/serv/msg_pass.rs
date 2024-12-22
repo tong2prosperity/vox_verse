@@ -1,5 +1,5 @@
-use mngr::SERVER_MNGR;
-use structs::{CallRequest, SignalingMessage};
+use server_mngr::SERVER_MNGR;
+use msgs::{CallRequest, SignalingMessage};
 use tokio::sync::mpsc;
 
 use super::*;
@@ -19,8 +19,9 @@ pub async fn caller_handler(
     match server_mngr.assign_server_to_client(&client_id).await {
         Some(server_id) => {
             // 通知选中的RTC服务器
-            server_mngr.forward_to_server(&server_id, SignalingMessage::Call {
-                from: client_id,
+            server_mngr.forward_to_server(&server_id, SignalingMessage::ClientConnected {
+                client_id: client_id,
+                server_id: server_id.clone(),
             }).await;
             Json(RoomAssignResponse {
                 success: true,

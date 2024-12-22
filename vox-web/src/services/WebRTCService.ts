@@ -5,9 +5,11 @@ export class WebRTCService {
     private peerConnections: Map<string, RTCPeerConnection> = new Map();
     private localStream: MediaStream | null = null;
     private onStreamCallback: ((stream: MediaStream, userId: string) => void) | null = null;
-    private clientId: string | null = null;
+    private clientId: string;
+    private serverId: string | null = null;
 
     constructor(private user: User) {
+        this.clientId = user.id;
         this.ws = new WebSocket('ws://localhost:9527/ws/client');
         this.setupWebSocketListeners();
     }
@@ -15,6 +17,13 @@ export class WebRTCService {
     private setupWebSocketListeners() {
         this.ws.onopen = () => {
             console.log('Connected to signaling server');
+            // 发送ClientConnect消息
+            this.ws.send(JSON.stringify({
+                type: 'client_connect',
+                payload: {
+                    client_id: this.clientId
+                }
+            }));
         };
 
         this.ws.onmessage = async (event) => {
@@ -22,38 +31,40 @@ export class WebRTCService {
             console.log('Received message:', message);
 
             switch (message.type) {
-                case 'connected':
-                    this.clientId = message.client_id;
-                    // 连接后发送connect消息来请求分配RTC服务器
-                    this.ws.send(JSON.stringify({
-                        type: 'connect',
-                        payload: {}
-                    }));
-                    break;
-                    
-                case 'server_assigned':
-                    // 服务器分配完成，可以开始呼叫
-                    console.log('RTC server assigned:', message.server_id);
+                case 'client_connected':
+                    this.serverId = message.payload.server_id;
+                    console.log('Connected to RTC server:', this.serverId);
                     break;
 
                 case 'answer':
-                    const pc = this.peerConnections.get(message.user_id);
-                    if (pc) {
-                        await pc.setRemoteDescription(new RTCSessionDescription(message.sdp));
+                    if (message.from === this.serverId) {
+                        const pc = this.peerConnections.get(this.serverId!);
+                        if (pc) {
+                            await pc.setRemoteDescription(new RTCSessionDescription({
+                                type: 'answer',
+                                sdp: message.sdp
+                            }));
+                        }
                     }
                     break;
 
-                case 'candidate':
-                    const peerConnection = this.peerConnections.get(message.user_id);
-                    if (peerConnection) {
-                        await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
+                case 'ice_candidate':
+                    if (message.from === this.serverId) {
+                        const pc = this.peerConnections.get(this.serverId!);
+                        if (pc) {
+                            await pc.addIceCandidate(new RTCIceCandidate(JSON.parse(message.candidate)));
+                        }
                     }
                     break;
             }
         };
     }
 
-    private async createPeerConnection(targetUserId: string): Promise<RTCPeerConnection> {
+    private async createPeerConnection(): Promise<RTCPeerConnection> {
+        if (!this.serverId) {
+            throw new Error('No RTC server assigned');
+        }
+
         const pc = new RTCPeerConnection({
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' }
@@ -63,19 +74,17 @@ export class WebRTCService {
         pc.onicecandidate = (event) => {
             if (event.candidate) {
                 this.ws.send(JSON.stringify({
-                    type: 'message',
-                    payload: {
-                        type: 'candidate',
-                        user_id: targetUserId,
-                        candidate: event.candidate
-                    }
+                    type: 'ice_candidate',
+                    from: this.clientId,
+                    to: this.serverId,
+                    candidate: JSON.stringify(event.candidate)
                 }));
             }
         };
 
         pc.ontrack = (event) => {
             if (this.onStreamCallback) {
-                this.onStreamCallback(event.streams[0], targetUserId);
+                this.onStreamCallback(event.streams[0], this.serverId!);
             }
         };
 
@@ -87,22 +96,24 @@ export class WebRTCService {
             });
         }
 
-        this.peerConnections.set(targetUserId, pc);
+        this.peerConnections.set(this.serverId, pc);
         return pc;
     }
 
-    public async startCall(targetUserId: string) {
-        const pc = await this.createPeerConnection(targetUserId);
+    public async startCall() {
+        if (!this.serverId) {
+            throw new Error('No RTC server assigned');
+        }
+
+        const pc = await this.createPeerConnection();
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
 
         this.ws.send(JSON.stringify({
-            type: 'message',
-            payload: {
-                type: 'calling',
-                user_id: targetUserId,
-                sdp: offer
-            }
+            type: 'offer',
+            from: this.clientId,
+            to: this.serverId,
+            sdp: offer.sdp
         }));
     }
 
@@ -124,6 +135,15 @@ export class WebRTCService {
     }
 
     public disconnect() {
+        if (this.serverId) {
+            this.ws.send(JSON.stringify({
+                type: 'client_disconnect',
+                payload: {
+                    client_id: this.clientId
+                }
+            }));
+        }
+        
         this.peerConnections.forEach(pc => pc.close());
         this.peerConnections.clear();
         if (this.localStream) {

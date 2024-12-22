@@ -1,9 +1,9 @@
-pub mod call_handler;
+pub mod client_handler;
 pub mod events;
-pub mod mngr;
+pub mod server_mngr;
 pub mod msg_pass;
 pub mod rtc_server;
-pub mod structs;
+pub mod msgs;
 
 use events::*;
 

@@ -6,12 +6,12 @@ use axum::{
 use futures::{SinkExt, StreamExt};
 use serde::{de, Deserialize, Serialize};
 use std::sync::Arc;
-use structs::SignalingMessage;
+use msgs::SignalingMessage;
 use tokio::sync::mpsc;
 
 use crate::serv::{RawMessage, ServerEvent};
 
-use super::mngr::SERVER_MNGR;
+use super::server_mngr::SERVER_MNGR;
 use super::AppState;
 use super::*;
 
@@ -83,12 +83,7 @@ async fn handle_client_ws(socket: WebSocket, state: Arc<AppState>) {
                         "Successfully assigned server {} to client {}",
                         server_id, client_id
                     );
-                    let response = ClientResponse {
-                        msg_type: "server_assigned".to_string(),
-                        client_id: client_id.clone(),
-                        server_id: Some(server_id.clone()),
-                        error: None,
-                    };
+                    let response = SignalingMessage::ClientConnected { client_id: client_id.clone(), server_id: server_id.clone() };
                     debug!("Sending server assignment response: {:?}", response);
                     let _ = msg_tx.send(serde_json::to_string(&response).unwrap()).await;
 

@@ -42,8 +42,8 @@ export const VideoChat: React.FC<VideoChatProps> = ({ user, targetUserId }) => {
     }, [user]);
 
     const handleStartCall = () => {
-        if (webRTCService && targetUserId) {
-            webRTCService.startCall(targetUserId);
+        if (webRTCService) {
+            webRTCService.startCall();
         }
     };
 
