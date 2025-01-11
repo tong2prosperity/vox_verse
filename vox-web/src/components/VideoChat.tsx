@@ -8,14 +8,19 @@ interface VideoChatProps {
     targetUserId?: string;
 }
 
-export const VideoChat: React.FC<VideoChatProps> = ({ user, targetUserId }) => {
+export const VideoChat: React.FC<VideoChatProps> = ({ user }) => {
     const [webRTCService, setWebRTCService] = useState<WebRTCService | null>(null);
+    const [targetUserId, setTargetUserId] = useState<string | null>(null);
     const localVideoRef = useRef<HTMLVideoElement>(null);
     const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
     useEffect(() => {
         const service = new WebRTCService(user);
         setWebRTCService(service);
+
+        service.setOnServerConnected((serverId) => {
+            setTargetUserId(serverId);
+        });
 
         service.setOnStreamCallback((stream, userId) => {
             if (remoteVideoRef.current) {
@@ -86,7 +91,7 @@ export const VideoChat: React.FC<VideoChatProps> = ({ user, targetUserId }) => {
                                 onClick={handleStartCall}
                                 disabled={!targetUserId}
                             >
-                                Start Call
+                                {targetUserId ? 'Start Call' : 'Waiting for server...'}
                             </Button>
                         </Box>
                     </Grid>

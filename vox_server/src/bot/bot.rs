@@ -77,6 +77,7 @@ impl Bot {
                     match msg {
 
                         SignalingMessage::Offer {from, to, sdp } => {
+                            info!("Bot received offer, {:?}", sdp);
                             match self.rtc.handle_offer(sdp, self.audio_tx.unwrap().clone()).await {
                                 Ok(answer_sdp) => {
                                     self.ws_tx.send(SignalingMessage::Answer {from:to, to:from, sdp: answer_sdp}).await.unwrap();
@@ -88,6 +89,7 @@ impl Bot {
                         }
                         // SignalingMessage::Answer { room_id, from, to, sdp } => todo!(),
                         SignalingMessage::IceCandidate {from, to, candidate } => {
+                            info!("Bot received ice candidate, {:?}", candidate);
                             self.rtc.add_ice_candidate(candidate).await.unwrap();
                         }
                         _ => {

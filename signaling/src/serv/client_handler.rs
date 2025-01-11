@@ -4,9 +4,9 @@ use axum::{
     response::IntoResponse,
 };
 use futures::{SinkExt, StreamExt};
+use msgs::SignalingMessage;
 use serde::{de, Deserialize, Serialize};
 use std::sync::Arc;
-use msgs::SignalingMessage;
 use tokio::sync::mpsc;
 
 use crate::serv::{RawMessage, ServerEvent};
@@ -83,11 +83,19 @@ async fn handle_client_ws(socket: WebSocket, state: Arc<AppState>) {
                         "Successfully assigned server {} to client {}",
                         server_id, client_id
                     );
-                    let response = SignalingMessage::ClientConnected { client_id: client_id.clone(), server_id: server_id.clone() };
+                    let response = SignalingMessage::ClientConnected {
+                        client_id: client_id.clone(),
+                        server_id: server_id.clone(),
+                    };
                     debug!("Sending server assignment response: {:?}", response);
                     let _ = msg_tx.send(serde_json::to_string(&response).unwrap()).await;
 
-                    server_mngr.forward_to_server_by_client(&client_id.clone(), serde_json::from_str::<SignalingMessage>(&msg).unwrap()).await;
+                    server_mngr
+                        .forward_to_server_by_client(
+                            &client_id.clone(),
+                            serde_json::from_str::<SignalingMessage>(&msg).unwrap(),
+                        )
+                        .await;
                     (client_id.clone(), server_id.clone())
                 } else {
                     warn!("No available server found for client {}", client_id);
@@ -100,7 +108,7 @@ async fn handle_client_ws(socket: WebSocket, state: Arc<AppState>) {
             }
         }
     } else {
-        warn!("Failed to parse message from client");
+        warn!("Failed to parse message from client for the first frame");
         return;
     };
 

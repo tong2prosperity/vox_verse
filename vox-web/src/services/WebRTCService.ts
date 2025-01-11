@@ -5,6 +5,7 @@ export class WebRTCService {
     private peerConnections: Map<string, RTCPeerConnection> = new Map();
     private localStream: MediaStream | null = null;
     private onStreamCallback: ((stream: MediaStream, userId: string) => void) | null = null;
+    private onServerConnectedCallback: ((serverId: string) => void) | null = null;
     private clientId: string;
     private serverId: string | null = null;
 
@@ -34,6 +35,9 @@ export class WebRTCService {
                 case 'client_connected':
                     this.serverId = message.payload.server_id;
                     console.log('Connected to RTC server:', this.serverId);
+                    if (this.onServerConnectedCallback && this.serverId) {
+                        this.onServerConnectedCallback(this.serverId);
+                    }
                     break;
 
                 case 'answer':
@@ -75,9 +79,11 @@ export class WebRTCService {
             if (event.candidate) {
                 this.ws.send(JSON.stringify({
                     type: 'ice_candidate',
-                    from: this.clientId,
-                    to: this.serverId,
-                    candidate: JSON.stringify(event.candidate)
+                    payload: {
+                        from: this.clientId,
+                        to: this.serverId,
+                        candidate: JSON.stringify(event.candidate)
+                    }
                 }));
             }
         };
@@ -111,9 +117,11 @@ export class WebRTCService {
 
         this.ws.send(JSON.stringify({
             type: 'offer',
-            from: this.clientId,
-            to: this.serverId,
-            sdp: offer.sdp
+            payload: {
+                from: this.clientId,
+                to: this.serverId,
+                sdp: offer.sdp
+            }
         }));
     }
 
@@ -150,5 +158,9 @@ export class WebRTCService {
             this.localStream.getTracks().forEach(track => track.stop());
         }
         this.ws.close();
+    }
+
+    public setOnServerConnected(callback: (serverId: string) => void) {
+        this.onServerConnectedCallback = callback;
     }
 }
