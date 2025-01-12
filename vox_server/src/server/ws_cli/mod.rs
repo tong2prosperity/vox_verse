@@ -97,12 +97,15 @@ async fn run_websocket_client() {
     }
 }
 
-pub async fn run_signaling_client(bus_tx: mpsc::Sender<SignalingMessage>) {
+// 从websocket接收消息，发送给messagebus，并从messagebus接收消息，发送给websocket
+pub async fn run_signaling_client(
+    bus_tx: mpsc::Sender<SignalingMessage>,
+    mut ws_rx: mpsc::Receiver<SignalingMessage>,
+) {
     let url = Url::parse(&CONFIG.read().await.server.signaling_server).unwrap();
     let url_str = url.as_str().into_client_request().unwrap();
 
     // 连接到 WebSocket 服务器
-    
     let (ws_stream, _) = connect_async(url_str).await.expect("Failed to connect");
     info!("Connected to the server");
 
@@ -118,17 +121,47 @@ pub async fn run_signaling_client(bus_tx: mpsc::Sender<SignalingMessage>) {
         .await
         .expect("Failed to send register message");
 
-    while let Some(msg) = read.next().await {
-        match msg {
-            Ok(Message::Text(text)) => {
-                let msg = serde_json::from_str::<SignalingMessage>(&text).unwrap();
-                bus_tx.send(msg).await.unwrap();
+    // 使用 tokio::select! 同时处理 WebSocket 接收和 ws_rx 接收的消息
+    loop {
+        tokio::select! {
+            // 处理从 WebSocket 接收的消息
+            Some(msg) = read.next() => {
+                match msg {
+                    Ok(Message::Text(text)) => {
+                        match serde_json::from_str::<SignalingMessage>(&text) {
+                            Ok(msg) => {
+                                if let Err(e) = bus_tx.send(msg).await {
+                                    error!("Failed to send message to bus: {}", e);
+                                }
+                            }
+                            Err(e) => error!("Failed to parse signaling message: {}", e),
+                        }
+                    }
+                    Err(e) => {
+                        error!("WebSocket error: {}", e);
+                        break;
+                    }
+                    _ => {
+                        error!("Received unexpected message type");
+                    }
+                }
             }
-            _ => {
-                error!("recv msg: {:?}", msg);
+            // 处理从 ws_rx 接收的消息并发送到 WebSocket
+            Some(msg) = ws_rx.recv() => {
+                debug!("Sending message through WebSocket: {:?}", msg);
+                match serde_json::to_string(&msg) {
+                    Ok(text) => {
+                        if let Err(e) = write.send(Message::Text(text)).await {
+                            error!("Failed to send message through WebSocket: {}", e);
+                        }
+                    }
+                    Err(e) => error!("Failed to serialize message: {}", e),
+                }
             }
         }
     }
+
+    error!("WebSocket connection closed");
 }
 
 // async fn handle_server_message(ws_stream: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>, msg: &str) {

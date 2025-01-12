@@ -35,6 +35,7 @@ impl RtcServer {
                         Some(Ok(Message::Text(text))) => {
                             if let Ok(signaling_msg) = serde_json::from_str::<SignalingMessage>(&text) {
                                 info!("recv signaling msg: {}", text);
+                                // rtc server 收到消息后，需要发给对应的client！！！！
                                 self.ws.send(Message::Text(serde_json::to_string(&signaling_msg).unwrap())).await.unwrap();
                             }
                         },

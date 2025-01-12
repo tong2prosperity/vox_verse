@@ -65,12 +65,14 @@ impl RTCClient {
                 offer_sdp,
             )?;
         self.peer_connection.set_remote_description(offer).await?;
+        debug!("Bot set remote description ok");
 
         // 监听音频轨道
         self.peer_connection
             .on_track(Box::new(move |track, _receiver, _transceiver| {
                 let audio_tx = audio_tx.clone();
                 Box::pin(async move {
+                    info!("Bot received track, {:?}", track);
                     if track.kind() == RTPCodecType::Audio {
                         Self::handle_track(track, audio_tx).await;
                     }
@@ -79,10 +81,18 @@ impl RTCClient {
 
         // 创建Answer
         let answer = self.peer_connection.create_answer(None).await?;
+        info!("Bot creating answer, {:?}", answer);
         self.peer_connection
             .set_local_description(answer.clone())
             .await?;
-
+        info!("Bot setting local description, {:?}", answer);
+        self.ws_tx
+            .send(SignalingMessage::Answer {
+                from: self.bot_id.clone(),
+                to: self.client_id.clone(),
+                sdp: answer.sdp.clone(),
+            })
+            .await?;
         Ok(answer.sdp)
     }
 
@@ -94,6 +104,7 @@ impl RTCClient {
 
         // ICE Candidate 处理
         self.peer_connection.on_ice_candidate(Box::new(move |c| {
+            info!("Bot received ice candidate, {:?}", c);
             let client_id = client_id.clone();
             let bot_id = bot_id.clone();
 

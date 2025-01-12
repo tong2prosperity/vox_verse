@@ -41,6 +41,8 @@ export class WebRTCService {
                     break;
 
                 case 'answer':
+                    // debug log
+                    console.log('Received answer:', message);
                     if (message.from === this.serverId) {
                         const pc = this.peerConnections.get(this.serverId!);
                         if (pc) {

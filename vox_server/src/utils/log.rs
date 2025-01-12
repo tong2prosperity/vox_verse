@@ -14,27 +14,27 @@ pub static GLOBAL_LOGGER: Lazy<Logger> = Lazy::new(|| {
 #[macro_export]
 macro_rules! info {
     ($($arg:tt)+) => {
-        slog::info!($crate::utils::log::GLOBAL_LOGGER, $($arg)+)
+        slog::info!($crate::utils::log::GLOBAL_LOGGER, $($arg)+; "file" => file!(), "line" => line!())
     }
 }
 
 #[macro_export]
 macro_rules! debug {
     ($($arg:tt)+) => {
-        slog::debug!($crate::utils::log::GLOBAL_LOGGER, $($arg)+)
+        slog::debug!($crate::utils::log::GLOBAL_LOGGER, $($arg)+; "file" => file!(), "line" => line!())
     }
 }
 
 #[macro_export]
 macro_rules! error {
     ($($arg:tt)+) => {
-        slog::error!($crate::utils::log::GLOBAL_LOGGER, $($arg)+)
+        slog::error!($crate::utils::log::GLOBAL_LOGGER, $($arg)+; "file" => file!(), "line" => line!())
     }
 }
 
 #[macro_export]
 macro_rules! warn {
     ($($arg:tt)+) => {
-        slog::warn!($crate::utils::log::GLOBAL_LOGGER, $($arg)+)
+        slog::warn!($crate::utils::log::GLOBAL_LOGGER, $($arg)+; "file" => file!(), "line" => line!())
     }
 }

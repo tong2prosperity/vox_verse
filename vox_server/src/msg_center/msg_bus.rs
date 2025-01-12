@@ -28,22 +28,23 @@ impl MessageRouter {
             return;
         }
 
-        let (message_tx, message_rx) = mpsc::channel(DEFAULT_CHANNEL_SIZE);
+        // let (message_tx, message_rx) = mpsc::channel(DEFAULT_CHANNEL_SIZE);
 
-        let mut bot = Bot::new(
-            CONFIG.read().await.clone(),
-            client_id.clone(),
-            sender.clone(),
-            message_rx,
-        )
-        .await
-        .unwrap();
+        // let mut bot = Bot::new(
+        //     CONFIG.read().await.clone(),
+        //     client_id.clone(),
+        //     sender.clone(),
+        //     message_rx,
+        // )
+        // .await
+        // .unwrap();
 
-        bot.setup_audio_processor().await;
-        tokio::spawn(async move {
-            bot.handle_message().await;
-        });
-        self.bots_senders.insert(client_id.clone(), message_tx);
+        // bot.setup_audio_processor().await;
+        // tokio::spawn(async move {
+        //     bot.handle_message().await;
+        // });
+        self.bots_senders.insert(client_id.clone(), sender);
+        info!("Successfully added route for client: {}", client_id);
         // self.bots.insert(id.clone(), bot);
     }
 
@@ -75,11 +76,17 @@ impl BotManager {
     pub async fn create_bot(
         &mut self,
         client_id: String,
-        sender: mpsc::Sender<SignalingMessage>,
+        ws_sender: mpsc::Sender<SignalingMessage>,
     ) -> Result<mpsc::Sender<SignalingMessage>> {
         let (message_tx, message_rx) = mpsc::channel(DEFAULT_CHANNEL_SIZE);
 
-        let mut bot = Bot::new(CONFIG.read().await.clone(), client_id.clone(), sender, message_rx).await?;
+        let mut bot = Bot::new(
+            CONFIG.read().await.clone(),
+            client_id.clone(),
+            ws_sender,
+            message_rx,
+        )
+        .await?;
 
         bot.setup_audio_processor().await;
 
@@ -118,13 +125,16 @@ impl MessageBus {
     pub async fn register(&self, client_id: String) {
         info!("Attempting to register client with ID: {}", client_id);
         if self.router.read().await.get_sender(&client_id).is_some() {
-            warn!("Client {} already registered, skipping registration", client_id);
+            warn!(
+                "Client {} already registered, skipping registration",
+                client_id
+            );
             return;
         }
 
         let ws_sender = self.back2ws_sender.clone();
         debug!("Creating bot for client: {}", client_id);
-        
+
         let message_tx = match self
             .bot_manager
             .write()
@@ -143,7 +153,11 @@ impl MessageBus {
         };
 
         debug!("Adding route for client: {}", client_id);
-        self.router.write().await.add_route(&client_id, message_tx).await;
+        self.router
+            .write()
+            .await
+            .add_route(&client_id, message_tx)
+            .await;
         info!("Successfully registered client: {}", client_id);
     }
 
@@ -157,13 +171,10 @@ impl MessageBus {
         debug!("Attempting to send message from {}: {:?}", from, message);
         if let Some(sender) = self.router.read().await.get_sender(from) {
             info!("Found sender for {}, sending message", from);
-            sender
-                .send(message)
-                .await
-                .map_err(|e| {
-                    error!("Failed to send message from {}: {}", from, e);
-                    anyhow::anyhow!("Failed to send message: {}", e)
-                })?;
+            sender.send(message).await.map_err(|e| {
+                error!("Failed to send message from {}: {}", from, e);
+                anyhow::anyhow!("Failed to send message: {}", e)
+            })?;
             debug!("Successfully sent message from {}", from);
         } else {
             warn!("No route found for sender: {}", from);
@@ -171,7 +182,13 @@ impl MessageBus {
         Ok(())
     }
 
-    pub async fn run(mut msg_recv: mpsc::Receiver<SignalingMessage>, ws_tx: mpsc::Sender<SignalingMessage>) {
+    // 处理消息传递。
+    // 接收client消息，创建，发送给bot。
+    // 接收bot消息，发送给client。
+    pub async fn run(
+        mut msg_recv: mpsc::Receiver<SignalingMessage>,
+        ws_tx: mpsc::Sender<SignalingMessage>,
+    ) {
         info!("Starting MessageBus...");
         let mut bus = Self::new(ws_tx);
 
@@ -190,7 +207,10 @@ impl MessageBus {
                     info!("Received offer message from: {} to: {}", from, to);
                     match bus.send_from(&from, message.clone()).await {
                         Ok(_) => info!("Successfully sent offer message to bot: {}", from),
-                        Err(e) => error!("Failed to send offer message to bot: {}, error: {}", from, e),
+                        Err(e) => error!(
+                            "Failed to send offer message to bot: {}, error: {}",
+                            from, e
+                        ),
                     }
                 }
                 SignalingMessage::IceCandidate {
@@ -201,7 +221,10 @@ impl MessageBus {
                     info!("Received ICE candidate from: {} to: {}", from, to);
                     match bus.send_from(&from, message.clone()).await {
                         Ok(_) => info!("Successfully sent ICE candidate to bot: {}", from),
-                        Err(e) => error!("Failed to send ICE candidate to bot: {}, error: {}", from, e),
+                        Err(e) => error!(
+                            "Failed to send ICE candidate to bot: {}, error: {}",
+                            from, e
+                        ),
                     }
                 }
                 SignalingMessage::Answer {
@@ -212,7 +235,10 @@ impl MessageBus {
                     info!("Received answer message from: {} to: {}", from, to);
                     match bus.send_from(&from, message.clone()).await {
                         Ok(_) => info!("Successfully sent answer message to bot: {}", from),
-                        Err(e) => error!("Failed to send answer message to bot: {}, error: {}", from, e),
+                        Err(e) => error!(
+                            "Failed to send answer message to bot: {}, error: {}",
+                            from, e
+                        ),
                     }
                 }
                 _ => {

@@ -1,6 +1,6 @@
 use tokio::sync::mpsc;
+use vox_verse::{debug, error, info, warn};
 use vox_verse::{msg_center::msg_bus::MessageBus, server::ws_cli::run_signaling_client};
-use vox_verse::{info, debug, error, warn};
 #[tokio::main]
 async fn main() {
     info!("Starting vox_server...");
@@ -14,7 +14,7 @@ async fn main() {
     });
 
     info!("Starting signaling client");
-    let signaling_client_task = run_signaling_client(bus_tx);
+    let signaling_client_task = run_signaling_client(bus_tx, ws_rx);
 
     info!("Waiting for tasks to complete");
     tokio::join!(signaling_client_task);

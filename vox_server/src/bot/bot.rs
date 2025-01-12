@@ -31,6 +31,7 @@ impl Bot {
     ) -> Result<Self> {
         let bot_id = format!("bot_{}", xid::new().to_string());
         let rtc = RTCClient::new(client_id.clone(), bot_id.clone(), ws_tx.clone()).await?;
+        info!("Bot created with id: {}", bot_id);
         Ok(Self {
             bot_id,
             rtc,
@@ -62,44 +63,45 @@ impl Bot {
         self.processor_handle = Some(processor_handle);
     }
 
-    
-
     pub async fn handle_message(mut self) {
-
         // 通过ws_tx发送BotConnected消息
         //self.ws_tx.send(SignalingMessage::ClientConnected { client_id: self.client_id.clone(), server_id: SERVER_ID.clone() }).await.unwrap();
 
-        
-        tokio::select! {
-            control_msg = self.message_rx.recv() => {
-                info!("Bot received message, {:?}", control_msg);
-                if let Some(msg) = control_msg {
-                    match msg {
+        loop {
+            tokio::select! {
+                control_msg = self.message_rx.recv() => {
+                    info!("Bot received message, {:?}", control_msg);
+                    if let Some(msg) = control_msg {
+                        match msg {
 
-                        SignalingMessage::Offer {from, to, sdp } => {
-                            info!("Bot received offer, {:?}", sdp);
-                            match self.rtc.handle_offer(sdp, self.audio_tx.unwrap().clone()).await {
-                                Ok(answer_sdp) => {
-                                    self.ws_tx.send(SignalingMessage::Answer {from:to, to:from, sdp: answer_sdp}).await.unwrap();
-                                }
-                                Err(e) => {
-                                    error!("Failed to handle offer: {:?}", e);
+                            SignalingMessage::Offer {from, to, sdp } => {
+                                info!("Bot received offer, {:?}", sdp);
+                                match self.rtc.handle_offer(sdp, self.audio_tx.as_ref().unwrap().clone()).await {
+                                    Ok(answer_sdp) => {
+                                        info!("Bot sending answer, {:?}", answer_sdp);
+                                        //self.ws_tx.send(SignalingMessage::Answer {from:to, to:from, sdp: answer_sdp}).await.unwrap();
+                                    }
+                                    Err(e) => {
+                                        error!("Failed to handle offer: {:?}", e);
+                                    }
                                 }
                             }
-                        }
-                        // SignalingMessage::Answer { room_id, from, to, sdp } => todo!(),
-                        SignalingMessage::IceCandidate {from, to, candidate } => {
-                            info!("Bot received ice candidate, {:?}", candidate);
-                            self.rtc.add_ice_candidate(candidate).await.unwrap();
-                        }
-                        _ => {
-                            error!("Bot received unknown message: {:?}", msg);
+                            // SignalingMessage::Answer { room_id, from, to, sdp } => todo!(),
+                            SignalingMessage::IceCandidate {from, to, candidate } => {
+                                info!("Bot received ice candidate, {:?}", candidate);
+                                self.rtc.add_ice_candidate(candidate).await.unwrap();
+                            }
+                            _ => {
+                                error!("Bot received unknown message: {:?}", msg);
+                            }
                         }
                     }
                 }
-            }
 
+            }
         }
+
+        info!("Bot handle message loop exited");
     }
 }
 
