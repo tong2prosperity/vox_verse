@@ -14,7 +14,7 @@ pub struct Bot {
     rtc: RTCClient,
     cfg: AppConfig,
     audio_processor: Option<AudioBizProcessor>,
-    audio_tx: Option<mpsc::Sender<Vec<i16>>>,
+    audio_rx: Option<mpsc::Receiver<Vec<i16>>>,
     message_rx: mpsc::Receiver<SignalingMessage>,
     ws_tx: mpsc::Sender<SignalingMessage>,
 
@@ -29,15 +29,22 @@ impl Bot {
         ws_tx: mpsc::Sender<SignalingMessage>,
         message_rx: mpsc::Receiver<SignalingMessage>,
     ) -> Result<Self> {
-        let bot_id = format!("bot_{}", xid::new().to_string());
-        let rtc = RTCClient::new(client_id.clone(), bot_id.clone(), ws_tx.clone()).await?;
+        let bot_id = xid::new().to_string(); //format!("bot_{}", xid::new().to_string());
+        let mut rtc = RTCClient::new(client_id.clone(), bot_id.clone(), ws_tx.clone()).await?;
+
+        let (audio_tx, audio_rx) = mpsc::channel(100);
+        rtc.set_audio_tx(audio_tx);
+
+        rtc.setup_pc_handlers().await?;
+        rtc.setup_media().await?;
+
         info!("Bot created with id: {}", bot_id);
         Ok(Self {
             bot_id,
             rtc,
             cfg,
             audio_processor: None,
-            audio_tx: None,
+            audio_rx: Some(audio_rx),
             message_rx,
             ws_tx: ws_tx.clone(),
 
@@ -47,7 +54,7 @@ impl Bot {
     }
 
     pub async fn setup_audio_processor(&mut self) {
-        let (audio_tx, audio_rx) = mpsc::channel(100);
+        let audio_rx = self.audio_rx.take().unwrap();
         let mut processor = AudioBizProcessor::new(audio_rx);
 
         // 添加音频处理能力
@@ -59,7 +66,6 @@ impl Bot {
             processor.start().await;
         });
 
-        self.audio_tx = Some(audio_tx);
         self.processor_handle = Some(processor_handle);
     }
 
@@ -76,10 +82,9 @@ impl Bot {
 
                             SignalingMessage::Offer {from, to, sdp } => {
                                 info!("Bot received offer, {:?}", sdp);
-                                match self.rtc.handle_offer(sdp, self.audio_tx.as_ref().unwrap().clone()).await {
-                                    Ok(answer_sdp) => {
-                                        info!("Bot sending answer, {:?}", answer_sdp);
-                                        //self.ws_tx.send(SignalingMessage::Answer {from:to, to:from, sdp: answer_sdp}).await.unwrap();
+                                match self.rtc.handle_offer(sdp).await {
+                                    Ok(_) => {
+                                        info!("Bot sending answer done");
                                     }
                                     Err(e) => {
                                         error!("Failed to handle offer: {:?}", e);
@@ -88,8 +93,14 @@ impl Bot {
                             }
                             // SignalingMessage::Answer { room_id, from, to, sdp } => todo!(),
                             SignalingMessage::IceCandidate {from, to, candidate } => {
-                                info!("Bot received ice candidate, {:?}", candidate);
-                                self.rtc.add_ice_candidate(candidate).await.unwrap();
+                                match self.rtc.add_ice_candidate(candidate).await {
+                                    Ok(_) => {
+                                        info!("rtc client add ice candidate success");
+                                    }
+                                    Err(e) => {
+                                        error!("rtc client add ice candidate failed: {:?}", e);
+                                    }
+                                }
                             }
                             _ => {
                                 error!("Bot received unknown message: {:?}", msg);
@@ -107,8 +118,8 @@ impl Bot {
 
 impl WebRTCHandler for Bot {
     async fn generate_answer(&mut self, offer_sdp: String) -> String {
-        let audio_tx = self.audio_tx.take().unwrap();
-        self.rtc.handle_offer(offer_sdp, audio_tx).await.unwrap()
+        //let audio_tx = self.audio_tx.take().unwrap();
+        self.rtc.handle_offer(offer_sdp).await.unwrap()
     }
 
     async fn handle_candidate(&mut self, candidate: String) {

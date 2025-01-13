@@ -117,7 +117,7 @@ async fn handle_client_ws(socket: WebSocket, state: Arc<AppState>) {
     let mut receive_task = tokio::spawn(async move {
         debug!("Starting WebSocket receive task for client");
         while let Some(Ok(Message::Text(text))) = receiver.next().await {
-            debug!("Received message from client  {}", text);
+            //debug!("Received message from client  {}", text);
             if let Ok(msg) = serde_json::from_str::<SignalingMessage>(&text) {
                 let mut server_mngr = SERVER_MNGR.lock().await;
 

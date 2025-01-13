@@ -1,7 +1,9 @@
 use en_decoder::{DecoderType, VoxDecoder};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
-use webrtc::interceptor::report::receiver;
+use webrtc::{
+    interceptor::report::receiver, peer_connection::sdp::session_description::RTCSessionDescription,
+};
 
 use crate::{
     msg_center::signaling_msgs::SignalingMessage,
@@ -50,24 +52,73 @@ impl RTCClient {
             client_id,
             bot_id,
         };
-        client.setup_pc_handlers().await?;
         Ok(client)
     }
 
-    pub async fn handle_offer(
-        &mut self,
-        offer_sdp: String,
-        audio_tx: mpsc::Sender<Vec<i16>>,
-    ) -> Result<String> {
+    pub async fn handle_offer(&mut self, offer_sdp: String) -> Result<String> {
         // 设置远程描述(Offer)
-        let offer =
-            webrtc::peer_connection::sdp::session_description::RTCSessionDescription::offer(
-                offer_sdp,
-            )?;
+        let offer = match serde_json::from_str::<RTCSessionDescription>(&offer_sdp) {
+            Ok(s) => s,
+            Err(err) => panic!("{}", err),
+        };
+
         self.peer_connection.set_remote_description(offer).await?;
         debug!("Bot set remote description ok");
 
+        let mut gather_complete = self.peer_connection.gathering_complete_promise().await;
+
+        // 创建Answer
+        let answer = self.peer_connection.create_answer(None).await?;
+        info!("Bot creating answer, {:?}", answer);
+        self.peer_connection
+            .set_local_description(answer.clone())
+            .await?;
+
+        let _ = gather_complete.recv().await;
+
+        let local_description = self.peer_connection.local_description().await.unwrap();
+        info!("Bot setting local description, {:?}", local_description);
+        self.ws_tx
+            .send(SignalingMessage::Answer {
+                from: self.bot_id.clone(),
+                to: self.client_id.clone(),
+                sdp: serde_json::to_string(&local_description).unwrap(),
+            })
+            .await?;
+        Ok(local_description.sdp)
+    }
+
+    pub async fn setup_pc_handlers(&mut self) -> Result<()> {
+        let pc = Arc::clone(&self.peer_connection);
+        let client_id = self.client_id.clone();
+        let bot_id = self.bot_id.clone();
+        let ws_tx = self.ws_tx.clone();
+
+        // ICE Candidate 处理
+        // 不做ice trickle
+        // self.peer_connection.on_ice_candidate(Box::new(move |c| {
+        //     info!("rtc client received ice candidate, {:?}", c);
+        //     let client_id = client_id.clone();
+        //     let bot_id = bot_id.clone();
+
+        //     let ws_tx = ws_tx.clone();
+        //     Box::pin(async move {
+        //         if let Some(candidate) = c {
+        //             let msg = SignalingMessage::IceCandidate {
+        //                 from: bot_id,
+        //                 to: client_id,
+        //                 candidate: serde_json::to_string(&candidate.to_json().unwrap()).unwrap(),
+        //             };
+        //             debug!("rtc client send ice candidate: {:?}", msg);
+        //             if let Err(e) = ws_tx.send(msg).await {
+        //                 error!("Failed to send ICE candidate: {}", e);
+        //             }
+        //         }
+        //     })
+        // }));
         // 监听音频轨道
+
+        let audio_tx = self.audio_tx.take().unwrap();
         self.peer_connection
             .on_track(Box::new(move |track, _receiver, _transceiver| {
                 let audio_tx = audio_tx.clone();
@@ -78,50 +129,6 @@ impl RTCClient {
                     }
                 })
             }));
-
-        // 创建Answer
-        let answer = self.peer_connection.create_answer(None).await?;
-        info!("Bot creating answer, {:?}", answer);
-        self.peer_connection
-            .set_local_description(answer.clone())
-            .await?;
-        info!("Bot setting local description, {:?}", answer);
-        self.ws_tx
-            .send(SignalingMessage::Answer {
-                from: self.bot_id.clone(),
-                to: self.client_id.clone(),
-                sdp: answer.sdp.clone(),
-            })
-            .await?;
-        Ok(answer.sdp)
-    }
-
-    async fn setup_pc_handlers(&mut self) -> Result<()> {
-        let pc = Arc::clone(&self.peer_connection);
-        let client_id = self.client_id.clone();
-        let bot_id = self.bot_id.clone();
-        let ws_tx = self.ws_tx.clone();
-
-        // ICE Candidate 处理
-        self.peer_connection.on_ice_candidate(Box::new(move |c| {
-            info!("Bot received ice candidate, {:?}", c);
-            let client_id = client_id.clone();
-            let bot_id = bot_id.clone();
-
-            let ws_tx = ws_tx.clone();
-            Box::pin(async move {
-                if let Some(candidate) = c {
-                    let msg = SignalingMessage::IceCandidate {
-                        from: bot_id,
-                        to: client_id,
-                        candidate: candidate.to_string(),
-                    };
-                    if let Err(e) = ws_tx.send(msg).await {
-                        error!("Failed to send ICE candidate: {}", e);
-                    }
-                }
-            })
-        }));
 
         // 连接状态变化处理
         self.peer_connection
@@ -153,6 +160,32 @@ impl RTCClient {
             .on_ice_connection_state_change(Box::new(
                 move |connection_state: RTCIceConnectionState| {
                     println!("Connection State has changed {connection_state}");
+                    match connection_state {
+                        RTCIceConnectionState::Unspecified => {
+                            info!("rtc client ice connection unspecify");
+                        }
+                        RTCIceConnectionState::New => {
+                            info!("rtc client ice connection new");
+                        }
+                        RTCIceConnectionState::Checking => {
+                            info!("rtc client ice connection checking");
+                        }
+                        RTCIceConnectionState::Connected => {
+                            info!("rtc client ice connection connected");
+                        }
+                        RTCIceConnectionState::Completed => {
+                            info!("rtc client ice connection completed");
+                        }
+                        RTCIceConnectionState::Disconnected => {
+                            info!("rtc client ice connection disconnected");
+                        }
+                        RTCIceConnectionState::Failed => {
+                            info!("rtc client ice connection failed");
+                        }
+                        RTCIceConnectionState::Closed => {
+                            info!("rtc client ice connection closed");
+                        }
+                    }
                     if connection_state == RTCIceConnectionState::Connected {
                         // 通知上层 notify_tx.send()
                     }
@@ -207,6 +240,14 @@ impl RTCClient {
             .await
             .map_err(|e| anyhow::anyhow!("Failed to add ICE candidate: {:?}", e))
     }
+
+    pub(crate) fn set_audio_tx(&mut self, audio_tx: mpsc::Sender<Vec<i16>>) -> () {
+        self.audio_tx = Some(audio_tx);
+    }
+
+    // pub(crate) fn set_audio_rx(&mut self, audio_rx: mpsc::Receiver<Vec<i16>>) -> () {
+    //     self.audio_rx = Some(audio_rx);
+    // }
 }
 
 impl RTCClient {
@@ -246,7 +287,7 @@ impl RTCClient {
         }
     }
 
-    async fn setup_media(&mut self) -> Result<()> {
+    pub async fn setup_media(&mut self) -> Result<()> {
         let audio_track = Arc::new(TrackLocalStaticSample::new(
             RTCRtpCodecCapability {
                 mime_type: MIME_TYPE_OPUS.to_owned(),
