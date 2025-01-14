@@ -2,7 +2,8 @@ use en_decoder::{DecoderType, VoxDecoder};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use webrtc::{
-    interceptor::report::receiver, peer_connection::sdp::session_description::RTCSessionDescription,
+    ice_transport::ice_candidate::RTCIceCandidate, interceptor::report::receiver,
+    peer_connection::sdp::session_description::RTCSessionDescription,
 };
 
 use crate::{
@@ -24,6 +25,7 @@ pub struct RTCClient {
     ws_tx: mpsc::Sender<SignalingMessage>,
     client_id: String,
     bot_id: String,
+    cached_candidates: Arc<Mutex<Vec<RTCIceCandidate>>>,
 }
 
 impl RTCClient {
@@ -34,6 +36,7 @@ impl RTCClient {
     ) -> Result<Self> {
         let mut registry = Registry::new();
         let mut media_engine = MediaEngine::default();
+        media_engine.register_default_codecs()?;
         registry = register_default_interceptors(registry, &mut media_engine)?;
         let api = APIBuilder::new()
             .with_media_engine(media_engine)
@@ -51,6 +54,7 @@ impl RTCClient {
             ws_tx,
             client_id,
             bot_id,
+            cached_candidates: Arc::new(Mutex::new(Vec::new())),
         };
         Ok(client)
     }
@@ -65,7 +69,7 @@ impl RTCClient {
         self.peer_connection.set_remote_description(offer).await?;
         debug!("Bot set remote description ok");
 
-        let mut gather_complete = self.peer_connection.gathering_complete_promise().await;
+        //let mut gather_complete = self.peer_connection.gathering_complete_promise().await;
 
         // 创建Answer
         let answer = self.peer_connection.create_answer(None).await?;
@@ -74,7 +78,7 @@ impl RTCClient {
             .set_local_description(answer.clone())
             .await?;
 
-        let _ = gather_complete.recv().await;
+        //let _ = gather_complete.recv().await;
 
         let local_description = self.peer_connection.local_description().await.unwrap();
         info!("Bot setting local description, {:?}", local_description);
@@ -85,37 +89,64 @@ impl RTCClient {
                 sdp: serde_json::to_string(&local_description).unwrap(),
             })
             .await?;
+
+        // 在设置远程描述后发送缓存的候选项
+        let cached = {
+            let mut cache = self.cached_candidates.lock().unwrap();
+            std::mem::take(&mut *cache)
+        };
+
+        for candidate in cached {
+            let msg = SignalingMessage::IceCandidate {
+                from: self.bot_id.clone(),
+                to: self.client_id.clone(),
+                candidate: serde_json::to_string(&candidate.to_json().unwrap()).unwrap(),
+            };
+            self.ws_tx.send(msg).await?;
+        }
+
         Ok(local_description.sdp)
     }
 
     pub async fn setup_pc_handlers(&mut self) -> Result<()> {
-        let pc = Arc::clone(&self.peer_connection);
+        let pc: Arc<RTCPeerConnection> = Arc::clone(&self.peer_connection);
         let client_id = self.client_id.clone();
         let bot_id = self.bot_id.clone();
         let ws_tx = self.ws_tx.clone();
+        let cached_candidates: Arc<Mutex<Vec<RTCIceCandidate>>> =
+            Arc::clone(&self.cached_candidates);
 
         // ICE Candidate 处理
         // 不做ice trickle
-        // self.peer_connection.on_ice_candidate(Box::new(move |c| {
-        //     info!("rtc client received ice candidate, {:?}", c);
-        //     let client_id = client_id.clone();
-        //     let bot_id = bot_id.clone();
+        self.peer_connection.on_ice_candidate(Box::new(move |c| {
+            info!("rtc client received ice candidate, {:?}", c);
+            let pc2 = Arc::clone(&pc);
+            let client_id = client_id.clone();
+            let bot_id = bot_id.clone();
+            let ws_tx = ws_tx.clone();
+            let cached_candidates = Arc::clone(&cached_candidates);
 
-        //     let ws_tx = ws_tx.clone();
-        //     Box::pin(async move {
-        //         if let Some(candidate) = c {
-        //             let msg = SignalingMessage::IceCandidate {
-        //                 from: bot_id,
-        //                 to: client_id,
-        //                 candidate: serde_json::to_string(&candidate.to_json().unwrap()).unwrap(),
-        //             };
-        //             debug!("rtc client send ice candidate: {:?}", msg);
-        //             if let Err(e) = ws_tx.send(msg).await {
-        //                 error!("Failed to send ICE candidate: {}", e);
-        //             }
-        //         }
-        //     })
-        // }));
+            Box::pin(async move {
+                if let Some(candidate) = c {
+                    if pc2.remote_description().await.is_none() {
+                        // 如果还没有远程描述，缓存候选项
+                        cached_candidates.lock().unwrap().push(candidate);
+                    } else {
+                        // 已有远程描述，直接发送
+                        let msg = SignalingMessage::IceCandidate {
+                            from: bot_id,
+                            to: client_id,
+                            candidate: serde_json::to_string(&candidate.to_json().unwrap())
+                                .unwrap(),
+                        };
+                        debug!("rtc client send ice candidate: {:?}", msg);
+                        if let Err(e) = ws_tx.send(msg).await {
+                            error!("Failed to send ICE candidate: {}", e);
+                        }
+                    }
+                }
+            })
+        }));
         // 监听音频轨道
 
         let audio_tx = self.audio_tx.take().unwrap();
@@ -145,12 +176,10 @@ impl RTCClient {
         Ok(())
     }
 
-    fn setup_pc_other_handler(&mut self) -> Result<()> {
-        let ws_tx: mpsc::Sender<SignalingMessage> = self.ws_tx.clone();
-
+    pub fn setup_pc_other_handler(&mut self) -> Result<()> {
         self.peer_connection
             .on_data_channel(Box::new(move |channel| {
-                println!("Data channel opened");
+                debug!("data channel opened");
                 Box::pin(async move {
                     // 处理数据通道
                 })
@@ -159,7 +188,7 @@ impl RTCClient {
         self.peer_connection
             .on_ice_connection_state_change(Box::new(
                 move |connection_state: RTCIceConnectionState| {
-                    println!("Connection State has changed {connection_state}");
+                    debug!("Connection State has changed {connection_state}");
                     match connection_state {
                         RTCIceConnectionState::Unspecified => {
                             info!("rtc client ice connection unspecify");
@@ -220,11 +249,11 @@ impl RTCClient {
                 Ok((n, _)) => {
                     if n.len() > 0 {
                         // 在这里处理PCM音频数据
-                        println!("收到 {} 字节的音频数据", &n.len());
+                        info!("收到 {} 字节的音频数据", &n.len());
                     }
                 }
                 Err(err) => {
-                    println!("读取音频数据出错: {}", err);
+                    error!("读取音频数据出错: {}", err);
                     break;
                 }
             }
@@ -270,6 +299,7 @@ impl RTCClient {
                     if n.payload.len() > 0 {
                         match decoder.decode(&n.payload).await {
                             Ok(pcm_data) => {
+                                info!("收到 {} 字节的音频数据", &pcm_data.len());
                                 if let Err(e) = audio_tx.send(pcm_data).await {
                                     error!("send audio data to bot failed: {}", e);
                                     break;
@@ -295,8 +325,8 @@ impl RTCClient {
                 channels: 1,
                 ..Default::default()
             },
-            "audio_tts_res_track".to_owned(),
-            self.track_id.to_owned(),
+            "audio".to_owned(),
+            "webrtc-rs".to_owned(),
         ));
 
         let rtp_sender = self.peer_connection.add_track(audio_track).await?;

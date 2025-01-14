@@ -36,6 +36,7 @@ impl Bot {
         rtc.set_audio_tx(audio_tx);
 
         rtc.setup_pc_handlers().await?;
+        rtc.setup_pc_other_handler()?;
         rtc.setup_media().await?;
 
         info!("Bot created with id: {}", bot_id);
