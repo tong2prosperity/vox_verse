@@ -1,8 +1,9 @@
 use anyhow::Result;
 use async_trait::async_trait;
+use bytes::Bytes;
 use opus::Decoder as OpusDecoder;
-use std::sync::Arc;
-
+use opus::Encoder as OpusEncoder;
+use tokio::sync::Mutex;
 // 音频解码器trait
 #[async_trait]
 pub trait AudioDecoder: Send + 'static {
@@ -13,7 +14,6 @@ pub trait AudioDecoder: Send + 'static {
     // 获取通道数
     fn channels(&self) -> u16;
 }
-
 // Opus解码器实现
 pub struct OpusAudioDecoder {
     decoder: OpusDecoder,
@@ -49,9 +49,48 @@ impl AudioDecoder for OpusAudioDecoder {
     }
 }
 
+pub struct OpusAudioEncoder {
+    encoder: Mutex<OpusEncoder>,
+    sample_rate: u32,
+    channels: u16,
+}
+
+impl OpusAudioEncoder {
+    pub fn new(sample_rate: u32, channels: u16) -> Result<Self> {
+        Ok(Self {
+            encoder: Mutex::new(OpusEncoder::new(
+                sample_rate,
+                opus::Channels::Mono,
+                opus::Application::Voip,
+            )?),
+            sample_rate,
+            channels,
+        })
+    }
+}
+
+#[async_trait]
+impl AudioEncoder for OpusAudioEncoder {
+    async fn encode(&mut self, input: &[i16]) -> Result<Bytes> {
+        let mut output = vec![0u8; 1920]; // 20ms at 48kHz
+        let mut encoder = self.encoder.lock().await;
+        let samples = encoder.encode(input, &mut output)?;
+        output.truncate(samples * self.channels as usize);
+        Ok(Bytes::from(output))
+    }
+
+    fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    fn channels(&self) -> u16 {
+        self.channels
+    }
+}
+
 // 工厂函数用于创建不同类型的解码器
 #[derive(Debug)]
-pub enum DecoderType {
+pub enum CodecType {
     Opus,
     // 未来可以添加更多解码器类型
     // AAC,
@@ -60,12 +99,12 @@ pub enum DecoderType {
 }
 
 pub fn create_decoder(
-    decoder_type: DecoderType,
+    decoder_type: CodecType,
     sample_rate: u32,
     channels: u16,
 ) -> Result<Box<dyn AudioDecoder>> {
     match decoder_type {
-        DecoderType::Opus => {
+        CodecType::Opus => {
             let decoder = OpusAudioDecoder::new(sample_rate, channels)?;
             Ok(Box::new(decoder))
         } // 未来添加更多解码器类型的匹配
@@ -75,7 +114,7 @@ pub fn create_decoder(
 // 音频编码器trait，为未来可能的编码功能预留
 #[async_trait]
 pub trait AudioEncoder: Send + Sync {
-    async fn encode(&mut self, input: &[i16]) -> Result<Vec<u8>>;
+    async fn encode(&mut self, input: &[i16]) -> Result<Bytes>;
     fn sample_rate(&self) -> u32;
     fn channels(&self) -> u16;
 }
@@ -86,7 +125,7 @@ pub struct VoxDecoder {
 }
 
 impl VoxDecoder {
-    pub fn new(decoder_type: DecoderType, sample_rate: u32, channels: u16) -> Result<Self> {
+    pub fn new(decoder_type: CodecType, sample_rate: u32, channels: u16) -> Result<Self> {
         let decoder = create_decoder(decoder_type, sample_rate, channels)?;
         Ok(Self { decoder })
     }
@@ -101,5 +140,18 @@ impl VoxDecoder {
 
     pub fn channels(&self) -> u16 {
         self.decoder.channels()
+    }
+}
+
+pub fn create_encoder(
+    codec_type: CodecType,
+    sample_rate: u32,
+    channels: u16,
+) -> Result<Box<dyn AudioEncoder>> {
+    match codec_type {
+        CodecType::Opus => {
+            let encoder = OpusAudioEncoder::new(sample_rate, channels)?;
+            Ok(Box::new(encoder))
+        }
     }
 }

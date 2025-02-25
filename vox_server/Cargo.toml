@@ -32,3 +32,6 @@ xid = "1.1.1"
 opus = "0.3.0"
 env_logger = "0.11"
 log = "0.4"
+bytes = "1.10"
+
+llm-audio-toolkit = { path = "/Users/nixi/Project/rtc/llm-audio-toolkit" }

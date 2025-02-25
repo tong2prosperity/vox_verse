@@ -1,27 +1,32 @@
-use en_decoder::{DecoderType, VoxDecoder};
+use en_decoder::{CodecType, VoxDecoder};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use webrtc::{
-    ice_transport::ice_candidate::RTCIceCandidate, interceptor::report::receiver,
+    ice_transport::ice_candidate::RTCIceCandidate, interceptor::report::receiver, media::Sample,
     peer_connection::sdp::session_description::RTCSessionDescription,
 };
 
 use crate::{
     msg_center::signaling_msgs::SignalingMessage,
-    server::signal_cli::{
-        msgs::{ServerEvent, ServerMsg},
-        SERVER_ID,
+    server::{
+        data,
+        signal_cli::{
+            msgs::{ServerEvent, ServerMsg},
+            SERVER_ID,
+        },
     },
 };
 
-use super::*;
+use super::{en_decoder::create_encoder, *};
 
 pub struct RTCClient {
     peer_connection: Arc<RTCPeerConnection>,
     api: API,
     track_id: String,
     rtp_sender: Option<Arc<RTCRtpSender>>,
-    audio_tx: Option<mpsc::Sender<Vec<i16>>>,
+    audio_track: Option<Arc<TrackLocalStaticSample>>,
+    remote_audio_tx: Option<mpsc::Sender<Vec<i16>>>,
+    local_audio_rx: Option<mpsc::Receiver<data::AudioData>>,
     ws_tx: mpsc::Sender<SignalingMessage>,
     client_id: String,
     bot_id: String,
@@ -50,13 +55,19 @@ impl RTCClient {
             api,
             track_id: uuid::Uuid::new_v4().to_string(),
             rtp_sender: None,
-            audio_tx: None,
+            remote_audio_tx: None,
             ws_tx,
             client_id,
             bot_id,
             cached_candidates: Arc::new(Mutex::new(Vec::new())),
+            audio_track: None,
+            local_audio_rx: None,
         };
         Ok(client)
+    }
+
+    pub fn set_local_audio_rx(&mut self, local_audio_rx: mpsc::Receiver<data::AudioData>) {
+        self.local_audio_rx = Some(local_audio_rx);
     }
 
     pub async fn handle_offer(&mut self, offer_sdp: String) -> Result<String> {
@@ -149,7 +160,7 @@ impl RTCClient {
         }));
         // 监听音频轨道
 
-        let audio_tx = self.audio_tx.take().unwrap();
+        let audio_tx = self.remote_audio_tx.take().unwrap();
         self.peer_connection
             .on_track(Box::new(move |track, _receiver, _transceiver| {
                 let audio_tx = audio_tx.clone();
@@ -241,9 +252,8 @@ impl RTCClient {
         Ok(())
     }
 
-    async fn tts_audio_rtcp_handler(sender: Arc<RTCRtpSender>) {
+    async fn audio_track_rtcp_handler(sender: Arc<RTCRtpSender>) {
         let mut buff = vec![0u8; 1500]; //  just the rtcp packet
-
         loop {
             match sender.read(&mut buff).await {
                 Ok((n, _)) => {
@@ -260,6 +270,39 @@ impl RTCClient {
         }
     }
 
+    async fn audio_send_handler(
+        mut receiver: mpsc::Receiver<data::AudioData>,
+        audio_track: Arc<TrackLocalStaticSample>,
+    ) -> Result<()> {
+        let mut encoder = match create_encoder(CodecType::Opus, 48000, 1) {
+            Ok(p) => Box::pin(p),
+            Err(e) => {
+                error!("创建音频处理器失败: {}", e);
+                return Err(e);
+            }
+        };
+
+        loop {
+            let audio_data = receiver.recv().await;
+            if audio_data.is_none() {
+                error!("receive generated audio data error");
+                continue;
+            }
+
+            let audio_data = audio_data.unwrap();
+            let duration = audio_data.duration;
+            let audio_data = encoder.encode(&audio_data.data).await?;
+
+            let sample = Sample {
+                data: audio_data,
+                duration: duration,
+                ..Default::default()
+            };
+            audio_track.write_sample(&sample).await?;
+        }
+        Ok(())
+    }
+
     pub async fn add_ice_candidate(&self, candidate: String) -> Result<()> {
         self.peer_connection
             .add_ice_candidate(webrtc::ice_transport::ice_candidate::RTCIceCandidateInit {
@@ -270,8 +313,8 @@ impl RTCClient {
             .map_err(|e| anyhow::anyhow!("Failed to add ICE candidate: {:?}", e))
     }
 
-    pub(crate) fn set_audio_tx(&mut self, audio_tx: mpsc::Sender<Vec<i16>>) -> () {
-        self.audio_tx = Some(audio_tx);
+    pub(crate) fn set_remote_audio_tx(&mut self, audio_tx: mpsc::Sender<Vec<i16>>) -> () {
+        self.remote_audio_tx = Some(audio_tx);
     }
 
     // pub(crate) fn set_audio_rx(&mut self, audio_rx: mpsc::Receiver<Vec<i16>>) -> () {
@@ -283,7 +326,7 @@ impl RTCClient {
     // 处理远程音频轨道
     pub async fn handle_track(track: Arc<TrackRemote>, audio_tx: mpsc::Sender<Vec<i16>>) {
         debug!("handle_track start");
-        let mut decoder = match VoxDecoder::new(DecoderType::Opus, 48000, 1) {
+        let mut decoder = match VoxDecoder::new(CodecType::Opus, 48000, 1) {
             Ok(p) => Box::pin(p),
             Err(e) => {
                 error!("创建音频处理器失败: {}", e);
@@ -329,11 +372,15 @@ impl RTCClient {
             "webrtc-rs".to_owned(),
         ));
 
-        let rtp_sender = self.peer_connection.add_track(audio_track).await?;
-        tokio::spawn(Self::tts_audio_rtcp_handler(rtp_sender.clone()));
+        let rtp_sender = self.peer_connection.add_track(audio_track.clone()).await?;
+        tokio::spawn(Self::audio_track_rtcp_handler(rtp_sender.clone()));
+        tokio::spawn(Self::audio_send_handler(
+            self.local_audio_rx.take().unwrap(),
+            audio_track.clone(),
+        ));
 
         self.rtp_sender = Some(rtp_sender);
-
+        self.audio_track = Some(audio_track);
         Ok(())
     }
 }

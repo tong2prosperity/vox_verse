@@ -4,6 +4,7 @@ use crate::config::AppConfig;
 use crate::error;
 use crate::msg_center::signaling_msgs::SignalingMessage;
 use crate::server::rtc::rtc_client::RTCClient;
+use crate::server::rtc::rtc_delegate::RTCDelegate;
 use crate::server::rtc::traits::WebRTCHandler;
 use crate::server::signal_cli::SERVER_ID;
 use tokio::sync::mpsc;
@@ -29,12 +30,13 @@ impl Bot {
         ws_tx: mpsc::Sender<SignalingMessage>,
         message_rx: mpsc::Receiver<SignalingMessage>,
     ) -> Result<Self> {
-        let bot_id = xid::new().to_string(); //format!("bot_{}", xid::new().to_string());
+        let bot_id = xid::new().to_string();
+        let (delegate, local_audio_rx) = RTCDelegate::new();
         let mut rtc = RTCClient::new(client_id.clone(), bot_id.clone(), ws_tx.clone()).await?;
 
         let (audio_tx, audio_rx) = mpsc::channel(100);
-        rtc.set_audio_tx(audio_tx);
-
+        rtc.set_remote_audio_tx(audio_tx);
+        rtc.set_local_audio_rx(local_audio_rx);
         rtc.setup_pc_handlers().await?;
         rtc.setup_pc_other_handler()?;
         rtc.setup_media().await?;

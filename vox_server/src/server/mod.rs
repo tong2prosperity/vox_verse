@@ -1,3 +1,4 @@
+pub mod data;
 pub mod rtc;
 pub mod signal_cli;
 pub mod ws_cli;

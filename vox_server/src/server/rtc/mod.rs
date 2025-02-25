@@ -1,5 +1,6 @@
 pub mod en_decoder;
 pub mod rtc_client;
+pub mod rtc_delegate;
 pub mod traits;
 
 use std::sync::Arc;
