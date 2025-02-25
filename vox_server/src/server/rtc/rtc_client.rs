@@ -1,5 +1,13 @@
+use byteorder::{LittleEndian, ReadBytesExt};
+use bytes::Bytes;
 use en_decoder::{CodecType, VoxDecoder};
-use std::sync::{Arc, Mutex};
+use ogg::PacketReader;
+use std::{
+    fs::File,
+    io::BufReader,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 use tokio::sync::mpsc;
 use webrtc::{
     ice_transport::ice_candidate::RTCIceCandidate, interceptor::report::receiver, media::Sample,
@@ -274,33 +282,126 @@ impl RTCClient {
         mut receiver: mpsc::Receiver<data::AudioData>,
         audio_track: Arc<TrackLocalStaticSample>,
     ) -> Result<()> {
-        let mut encoder = match create_encoder(CodecType::Opus, 48000, 1) {
-            Ok(p) => Box::pin(p),
+        info!("start sleep for ten seconds");
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        // 读取 Ogg Opus 文件
+        let file_path = "/Users/nixi/Project/assets/louader.opus";
+        let file = match File::open(file_path) {
+            Ok(f) => f,
             Err(e) => {
-                error!("创建音频处理器失败: {}", e);
-                return Err(e);
+                error!("无法打开音频文件: {}", e);
+                return Err(anyhow::anyhow!("无法打开音频文件: {}", e));
             }
         };
 
-        loop {
-            let audio_data = receiver.recv().await;
-            if audio_data.is_none() {
-                error!("receive generated audio data error");
-                continue;
+        let reader = BufReader::new(file);
+        let mut packet_reader = PacketReader::new(reader);
+
+        // 跳过头部包
+        let mut header_packets = Vec::new();
+        for _ in 0..2 {
+            if let Some(packet) = packet_reader.read_packet().unwrap() {
+                header_packets.push(packet);
             }
+        }
 
-            let audio_data = audio_data.unwrap();
-            let duration = audio_data.duration;
-            let audio_data = encoder.encode(&audio_data.data).await?;
+        // 读取所有音频包
+        let mut opus_packets = Vec::new();
+        while let Some(packet) = packet_reader.read_packet().unwrap() {
+            opus_packets.push(packet.data);
+        }
 
+        info!("已加载 {} 个 Opus 数据包", opus_packets.len());
+
+        // 从头部获取采样率和通道数
+        let mut id_header_data = &header_packets[0].data[..];
+        let _magic = id_header_data.read_u64::<LittleEndian>().unwrap();
+        let _version = id_header_data.read_u8().unwrap();
+        let _channels = id_header_data.read_u8().unwrap();
+        let _pre_skip = id_header_data.read_u16::<LittleEndian>().unwrap();
+        let _sample_rate = id_header_data.read_u32::<LittleEndian>().unwrap();
+
+        // 固定的发送间隔 (20ms)
+        let packet_duration = Duration::from_millis(20);
+
+        // 循环发送数据包
+        let mut packet_index = 0;
+
+        loop {
+            // match receiver.try_recv() {
+            //     Ok(audio_data) => {
+            //         // 如果有其他模块发送的数据，优先处理
+            //         let sample = Sample {
+            //             data: audio_data.data,
+            //             duration: audio_data.duration,
+            //             ..Default::default()
+            //         };
+            //         if let Err(e) = audio_track.write_sample(&sample).await {
+            //             error!("发送样本失败: {}", e);
+            //         }
+            //         continue;
+            //     }
+            //     Err(mpsc::error::TryRecvError::Empty) => {
+            //         // 队列为空，继续发送文件数据
+            //     }
+            //     Err(mpsc::error::TryRecvError::Disconnected) => {
+            //         warn!("音频数据通道已断开");
+            //         // 通道断开但我们仍然继续发送文件数据
+            //     }
+            // }
+
+            // 获取当前数据包
+            let opus_packet = &opus_packets[packet_index];
+
+            // 创建样本
             let sample = Sample {
-                data: audio_data,
-                duration: duration,
+                data: Bytes::from(opus_packet.clone()),
+                duration: packet_duration,
                 ..Default::default()
             };
-            audio_track.write_sample(&sample).await?;
+
+            // 发送样本
+            if let Err(e) = audio_track.write_sample(&sample).await {
+                error!("发送样本失败: {}", e);
+                break;
+            }
+
+            // 更新索引，循环播放
+            packet_index = (packet_index + 1) % opus_packets.len();
+
+            // 等待固定时间间隔
+            tokio::time::sleep(packet_duration).await;
         }
+
         Ok(())
+
+        // let mut encoder = match create_encoder(CodecType::Opus, 48000, 1) {
+        //     Ok(p) => Box::pin(p),
+        //     Err(e) => {
+        //         error!("创建音频处理器失败: {}", e);
+        //         return Err(e);
+        //     }
+        // };
+
+        // loop {
+        //     let audio_data = receiver.recv().await;
+        //     if audio_data.is_none() {
+        //         error!("receive generated audio data error");
+        //         continue;
+        //     }
+
+        //     let audio_data = audio_data.unwrap();
+        //     let duration = audio_data.duration;
+        //     let audio_data = encoder.encode(&audio_data.data).await?;
+
+        //     let sample = Sample {
+        //         data: audio_data,
+        //         duration: duration,
+        //         ..Default::default()
+        //     };
+        //     audio_track.write_sample(&sample).await?;
+        // }
+        // Ok(())
     }
 
     pub async fn add_ice_candidate(&self, candidate: String) -> Result<()> {
