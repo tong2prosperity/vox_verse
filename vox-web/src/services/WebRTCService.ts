@@ -107,6 +107,15 @@ export class WebRTCService {
                 console.log('Received stream:', event.streams[0]);
                 this.onStreamCallback(event.streams[0], this.serverId!);
             }
+            
+            // 处理音频track
+            event.streams[0].getTracks().forEach(track => {
+                console.log('Received track:', track.kind);
+                if (track.kind === 'audio') {
+                    console.log('Received audio track:', track.id);
+                    this.handleAudioTrack(event.streams[0]);
+                }
+            });
         };
 
         pc.onicegatheringstatechange = (event) => {
@@ -125,6 +134,43 @@ export class WebRTCService {
             console.log('Signaling state changed:', pc.signalingState);
         };
 
+        pc.ondatachannel = (event) => {
+            console.log('Data channel received:', event.channel.label);
+            const dataChannel = event.channel;
+            
+            // 设置数据通道事件处理
+            dataChannel.onopen = () => {
+                console.log('Data channel is open and ready to use');
+            };
+            
+            dataChannel.onmessage = (event) => {
+                console.log('Received message from data channel:', event.data);
+                
+                // 检查是否是文件数据
+                if (event.data instanceof Blob) {
+                    console.log('Received file data, size:', event.data.size);
+                    this.handleFileReceived(event.data);
+                } else if (typeof event.data === 'string') {
+                    try {
+                        const message = JSON.parse(event.data);
+                        if (message.type === 'file-info') {
+                            console.log('Received file info:', message);
+                        }
+                    } catch (e) {
+                        console.log('Received text message:', event.data);
+                    }
+                }
+            };
+            
+            dataChannel.onerror = (error) => {
+                console.error('Data Channel Error:', error);
+            };
+            
+            dataChannel.onclose = () => {
+                console.log('The Data Channel is Closed');
+            };
+        };
+
         if (this.localStream) {
             this.localStream.getTracks().forEach(track => {
                 if (this.localStream) {
@@ -136,6 +182,109 @@ export class WebRTCService {
 
         this.peerConnections.set(this.serverId, pc);
         return pc;
+    }
+
+    // 处理音频track的方法
+    private handleAudioTrack(stream: MediaStream) {
+        console.log('处理音频流，轨道数量:', stream.getTracks().length);
+        
+        // 检查音频轨道
+        const audioTracks = stream.getAudioTracks();
+        console.log('音频轨道数量:', audioTracks.length);
+        audioTracks.forEach(track => {
+            console.log('音频轨道信息:', {
+                id: track.id,
+                enabled: track.enabled,
+                muted: track.muted,
+                readyState: track.readyState,
+                contentHint: track.contentHint
+            });
+        });
+        
+        // 创建音频元素并播放
+        const audioElement = document.createElement('audio');
+        
+        // 添加事件监听器以便调试
+        audioElement.onloadedmetadata = () => console.log('音频元数据已加载');
+        audioElement.oncanplay = () => console.log('音频可以开始播放');
+        audioElement.onplay = () => console.log('音频开始播放');
+        audioElement.onplaying = () => console.log('音频正在播放');
+        audioElement.onwaiting = () => console.log('音频等待中');
+        audioElement.onerror = (e) => console.error('音频播放错误:', e);
+        
+        // 设置属性
+        audioElement.srcObject = stream;
+        audioElement.autoplay = true;
+        audioElement.controls = true; // 显示控件以便调试
+        audioElement.style.position = 'fixed';
+        audioElement.style.bottom = '10px';
+        audioElement.style.right = '10px';
+        audioElement.style.zIndex = '1000';
+        
+        // 确保添加到DOM
+        document.body.appendChild(audioElement);
+        
+        // 尝试强制播放
+        const playPromise = audioElement.play();
+        if (playPromise !== undefined) {
+            playPromise
+                .then(() => console.log('音频播放成功启动'))
+                .catch(error => {
+                    console.error('自动播放失败:', error);
+                    // 添加一个按钮让用户点击播放
+                    const playButton = document.createElement('button');
+                    playButton.textContent = '播放音频';
+                    playButton.style.position = 'fixed';
+                    playButton.style.bottom = '50px';
+                    playButton.style.right = '10px';
+                    playButton.style.zIndex = '1001';
+                    playButton.onclick = () => {
+                        audioElement.play()
+                            .then(() => console.log('用户触发播放成功'))
+                            .catch(err => console.error('用户触发播放失败:', err));
+                    };
+                    document.body.appendChild(playButton);
+                });
+        }
+        
+        console.log('音频元素已创建并尝试播放');
+    }
+
+    // 处理接收到的文件数据
+    private handleFileReceived(fileData: Blob) {
+        // 创建一个URL以便播放或下载
+        const fileUrl = URL.createObjectURL(fileData);
+        
+        // 创建音频元素播放文件
+        const audioElement = document.createElement('audio');
+        audioElement.src = fileUrl;
+        audioElement.controls = true;
+        
+        // 添加到DOM以便用户可以控制
+        audioElement.style.position = 'fixed';
+        audioElement.style.bottom = '80px';
+        audioElement.style.right = '10px';
+        audioElement.style.zIndex = '1000';
+        document.body.appendChild(audioElement);
+        
+        // 添加下载按钮
+        const downloadButton = document.createElement('button');
+        downloadButton.textContent = '下载音频文件';
+        downloadButton.style.position = 'fixed';
+        downloadButton.style.bottom = '130px';
+        downloadButton.style.right = '10px';
+        downloadButton.style.zIndex = '1000';
+        downloadButton.onclick = () => {
+            const a = document.createElement('a');
+            a.href = fileUrl;
+            a.download = 'audio-file.opus'; // 或其他适当的文件名
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        };
+        document.body.appendChild(downloadButton);
+        
+        console.log('音频文件已准备好播放和下载');
     }
 
     public async startCall() {

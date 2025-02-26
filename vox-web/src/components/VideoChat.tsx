@@ -13,6 +13,8 @@ export const VideoChat: React.FC<VideoChatProps> = ({ user }) => {
     const [targetUserId, setTargetUserId] = useState<string | null>(null);
     const localVideoRef = useRef<HTMLVideoElement>(null);
     const remoteVideoRef = useRef<HTMLVideoElement>(null);
+    const remoteAudioRef = useRef<HTMLAudioElement>(null);
+    const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
 
     useEffect(() => {
         const service = new WebRTCService(user);
@@ -23,8 +25,24 @@ export const VideoChat: React.FC<VideoChatProps> = ({ user }) => {
         });
 
         service.setOnStreamCallback((stream, userId) => {
+            console.log('收到流，轨道类型:', stream.getTracks().map(t => t.kind).join(', '));
+            
+            // 处理视频流
             if (remoteVideoRef.current) {
                 remoteVideoRef.current.srcObject = stream;
+            }
+            
+            // 处理音频流
+            if (stream.getAudioTracks().length > 0) {
+                console.log('检测到音频轨道，设置到音频元素');
+                setAudioStream(stream);
+                if (remoteAudioRef.current) {
+                    remoteAudioRef.current.srcObject = stream;
+                    // 尝试播放
+                    remoteAudioRef.current.play()
+                        .then(() => console.log('组件内音频播放成功'))
+                        .catch(err => console.error('组件内音频播放失败:', err));
+                }
             }
         });
 
@@ -49,6 +67,17 @@ export const VideoChat: React.FC<VideoChatProps> = ({ user }) => {
     const handleStartCall = () => {
         if (webRTCService) {
             webRTCService.startCall();
+        }
+    };
+
+    const handlePlayAudio = () => {
+        if (remoteAudioRef.current && audioStream) {
+            console.log('手动播放音频');
+            remoteAudioRef.current.play()
+                .then(() => console.log('手动播放成功'))
+                .catch(err => console.error('手动播放失败:', err));
+        } else {
+            console.log('没有音频流或音频元素不存在');
         }
     };
 
@@ -81,6 +110,21 @@ export const VideoChat: React.FC<VideoChatProps> = ({ user }) => {
                                 playsInline
                                 style={{ width: '100%', maxHeight: '400px' }}
                             />
+                            {/* 添加音频元素用于调试 */}
+                            <audio 
+                                ref={remoteAudioRef}
+                                autoPlay
+                                controls
+                                style={{ width: '100%', marginTop: '10px' }}
+                            />
+                            <Button 
+                                variant="outlined" 
+                                color="secondary" 
+                                onClick={handlePlayAudio}
+                                sx={{ mt: 1 }}
+                            >
+                                手动播放音频
+                            </Button>
                         </Paper>
                     </Grid>
                     <Grid item xs={12}>

@@ -4,13 +4,16 @@ use en_decoder::{CodecType, VoxDecoder};
 use ogg::PacketReader;
 use std::{
     fs::File,
-    io::BufReader,
+    io::{BufReader, Read as _},
     sync::{Arc, Mutex},
     time::Duration,
 };
 use tokio::sync::mpsc;
 use webrtc::{
-    ice_transport::ice_candidate::RTCIceCandidate, interceptor::report::receiver, media::Sample,
+    data_channel::RTCDataChannel,
+    ice_transport::ice_candidate::RTCIceCandidate,
+    interceptor::report::receiver,
+    media::{audio::buffer::info, Sample},
     peer_connection::sdp::session_description::RTCSessionDescription,
 };
 
@@ -39,6 +42,7 @@ pub struct RTCClient {
     client_id: String,
     bot_id: String,
     cached_candidates: Arc<Mutex<Vec<RTCIceCandidate>>>,
+    data_channel: Arc<RTCDataChannel>,
 }
 
 impl RTCClient {
@@ -57,6 +61,9 @@ impl RTCClient {
             .build();
         let config = RTCConfiguration::default();
         let peer_connection = Arc::new(api.new_peer_connection(config).await?);
+        let data_channel = peer_connection
+            .create_data_channel("audio-file", None)
+            .await?;
 
         let mut client = Self {
             peer_connection,
@@ -70,6 +77,7 @@ impl RTCClient {
             cached_candidates: Arc::new(Mutex::new(Vec::new())),
             audio_track: None,
             local_audio_rx: None,
+            data_channel,
         };
         Ok(client)
     }
@@ -257,6 +265,32 @@ impl RTCClient {
 
                 Box::pin(async {})
             }));
+
+        let data_channel = self.data_channel.clone();
+        let d1 = data_channel.clone();
+        data_channel.on_open(Box::new(move || {
+            let d2 = d1.clone();
+            info!("data channel opened");
+            Box::pin(async move {
+                // read a file and send the whole file to remote peer
+                let file_path = "/Users/nixi/Project/assets/louader.opus";
+                let file = File::open(file_path).unwrap();
+                let mut reader = BufReader::new(file);
+                let mut buffer = vec![0; 4096];
+                loop {
+                    let bytes_read = reader.read(&mut buffer).unwrap();
+                    if bytes_read > 0 {
+                        let to_send = buffer[..bytes_read].to_vec();
+                        d2.send(&Bytes::from(to_send)).await.unwrap();
+                    }
+                }
+            })
+        }));
+        data_channel.on_buffered_amount_low(Box::new(move || {
+            info!("data channel buffered amount low");
+            Box::pin(async move {})
+        }));
+
         Ok(())
     }
 

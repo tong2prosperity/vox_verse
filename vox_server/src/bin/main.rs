@@ -19,6 +19,10 @@ async fn main() {
     //     })
     //     .filter(None, log::LevelFilter::Trace)
     //     .init();
+
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .unwrap();
     info!("Starting vox_server...");
     let (bus_tx, bus_rx) = mpsc::channel(100);
     let (ws_tx, ws_rx) = mpsc::channel(100);

@@ -33,6 +33,7 @@ opus = "0.3.0"
 env_logger = "0.11"
 log = "0.4"
 bytes = "1.10"
+rustls = "0.23"
 
 ogg = "0.9"
 lewton = "0.10"
