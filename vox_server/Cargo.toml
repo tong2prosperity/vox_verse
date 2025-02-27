@@ -40,3 +40,4 @@ lewton = "0.10"
 byteorder = "1.4"
 
 llm-audio-toolkit = { path = "/Users/nixi/Project/rtc/llm-audio-toolkit" }
+vad_rs = { path = "../vad_rs" }

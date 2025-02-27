@@ -1,3 +1,3 @@
 [workspace]
-members = [ "signaling","vox_server"]
+members = ["signaling", "vox_server", "vad_rs"]
 resolver = "2"

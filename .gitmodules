@@ -1,0 +1,4 @@
+[submodule "vad_rs"]
+	path = vad_rs
+	url = git@github.com:tong2prosperity/vad_rs.git
+	branch = main
