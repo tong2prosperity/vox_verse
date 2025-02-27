@@ -185,12 +185,7 @@ impl VadProcessor {
         let mut audio_buffer = Vec::new();
 
         while let Some(frame) = self.audio_frame_rx.recv().await {
-            let audio_data: Vec<i16> = frame
-                .data
-                .chunks_exact(2)
-                .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
-                // 将音频数据转换为i16格式并添加到缓冲区
-                .collect();
+            let audio_data: Vec<i16> = frame.data;
 
             //self.audio_buffer.extend(audio_data);
             audio_buffer.extend(audio_data);
